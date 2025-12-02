@@ -136,6 +136,11 @@ const ArticleToCarousel: React.FC = () => {
     const [showScheduler, setShowScheduler] = useState(false);
     const [scheduledDate, setScheduledDate] = useState('');
     const [scheduledTime, setScheduledTime] = useState('');
+
+    // Webhook State
+    const [sendingCarousel, setSendingCarousel] = useState(false);
+    const [sendSuccess, setSendSuccess] = useState(false);
+    const [sendError, setSendError] = useState<string | null>(null);
     
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -219,6 +224,57 @@ const ArticleToCarousel: React.FC = () => {
                 setTimeout(() => downloadSlide(slide.imageData!, idx), idx * 500);
             }
         });
+    };
+
+    const sendCarouselToWebhook = async () => {
+        if (!result) return;
+
+        setSendingCarousel(true);
+        setSendSuccess(false);
+        setSendError(null);
+
+        try {
+            // Extract hashtags from caption (words starting with #)
+            const hashtagRegex = /#\w+/g;
+            const hashtags = result.caption.match(hashtagRegex) || [];
+
+            // Prepare the payload
+            const payload = {
+                slides: result.slides.map((slide, idx) => ({
+                    order: slide.order,
+                    title: slide.title,
+                    content: slide.content,
+                    imageData: slide.imageData, // Base64 image data
+                })),
+                caption: result.caption,
+                hashtags: hashtags,
+                platform: selectedPlatform.name,
+                style: selectedStyle.name,
+                totalSlides: result.slides.length,
+                timestamp: new Date().toISOString(),
+            };
+
+            const response = await fetch('http://localhost:5678/webhook-test/fe6cc4c0-b169-48dd-a42a-59afced8a456', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Webhook failed with status: ${response.status}`);
+            }
+
+            setSendSuccess(true);
+            setTimeout(() => setSendSuccess(false), 3000);
+        } catch (err) {
+            console.error('Failed to send carousel to webhook:', err);
+            setSendError(err instanceof Error ? err.message : 'Failed to send carousel');
+            setTimeout(() => setSendError(null), 5000);
+        } finally {
+            setSendingCarousel(false);
+        }
     };
 
     const regenerateSlide = async (index: number) => {
@@ -636,6 +692,39 @@ const ArticleToCarousel: React.FC = () => {
                                     >
                                         <Download className="w-4 h-4" />
                                         Download All
+                                    </button>
+                                    <button
+                                        onClick={sendCarouselToWebhook}
+                                        disabled={sendingCarousel}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            sendSuccess
+                                                ? 'bg-emerald-500/20 text-emerald-300'
+                                                : sendError
+                                                    ? 'bg-red-500/20 text-red-300'
+                                                    : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                                        }`}
+                                    >
+                                        {sendingCarousel ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Sending...
+                                            </>
+                                        ) : sendSuccess ? (
+                                            <>
+                                                <Check className="w-4 h-4" />
+                                                Sent!
+                                            </>
+                                        ) : sendError ? (
+                                            <>
+                                                <AlertCircle className="w-4 h-4" />
+                                                Failed
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send className="w-4 h-4" />
+                                                Send Carousel
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </div>
