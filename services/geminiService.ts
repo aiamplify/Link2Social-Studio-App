@@ -636,51 +636,88 @@ export async function generateBlogFromArticle(
     }
 
     const writingPrompt = `
-    You are an expert technical writer and professional blogger.
-    
+    You are an expert technical writer and professional blogger who creates visually stunning, highly polished blog posts for major tech publications.
+
     Your task:
     ${contextPrompt}
-    
+
     2. USER INSTRUCTIONS: "${instructions}"
-    
-    3. Write a COMPLETELY NEW, ORIGINAL blog post. 
+
+    3. Write a COMPLETELY NEW, ORIGINAL blog post.
        - ${source.type === 'url' ? "Do NOT just summarize the existing article. Add a fresh perspective." : "Create a comprehensive post based on the findings."}
        - The tone should be engaging, professional, and visually varied.
        - APPROXIMATE LENGTH: ${wordCount} words.
-       - FORMATTING REQUIREMENTS (CRITICAL):
-         - Use RICH MARKDOWN formatting.
-         - Structure content with clear Header Levels: # Title, ## Section, ### Subsection.
-         - Use **Bold** for strong emphasis.
-         - Use *Italic* for subtle emphasis.
-         - Use bulleted lists (-) for readability.
-         - STYLING INSTRUCTION: You MUST use HTML tags for specific visual emphasis:
-            - Use <span class="blue">text</span> to highlight key concepts, terminology, or important phrases in BLUE.
-            - Use <u>text</u> to underline critical points that need attention.
-    
-    4. VISUAL PLACEMENT:
+
+    ===== PROFESSIONAL STYLING REQUIREMENTS (CRITICAL - FOLLOW EXACTLY) =====
+
+    **HEADER HIERARCHY:**
+    - Use ## for NUMBERED major section titles (e.g., "## 2. Chat with Gemini Live on the go", "## 3. Use Nano Banana Pro for creative pics")
+    - Use ### for subsection titles and feature callouts
+    - Section numbers create scannable, organized content structure
+
+    **HYPERLINKS (BLUE TEXT):**
+    - Include [linked text](url) markdown hyperlinks throughout the content
+    - Link product names, feature names, and technical terms to relevant documentation or pages
+    - Example: "open up [Gemini Live](https://gemini.google.com) in the Gemini app"
+    - Example: "Thanks to its [camera and screen sharing](https://support.google.com) capabilities"
+    - Links appear as blue clickable text - use them liberally for important terms
+
+    **BOLD TEXT FOR EMPHASIS:**
+    - Use **bold text** for:
+      - Category labels that start bullet points (e.g., "**Consumers and students:** Rolling out globally...")
+      - Feature names within sentences (e.g., "With **Gemini 3's advanced reasoning**, Nano Banana Pro doesn't just...")
+      - Key phrases that need emphasis (e.g., "**Generate more accurate, context-rich visuals** based on enhanced reasoning")
+
+    **HIGHLIGHTED TERMINOLOGY:**
+    - Use <span class="blue">text</span> for key concepts, terminology, or important phrases that should stand out in BLUE but are NOT links
+    - Use this sparingly for maximum impact on truly important terms
+
+    **BULLETED LISTS:**
+    - Use bulleted lists (-) for:
+      - Feature breakdowns by audience (Consumers, Professionals, Developers, Creatives)
+      - Step-by-step instructions
+      - Key benefits or capabilities
+    - Each bullet should start with a **bold label** when categorizing different audiences or features
+
+    **PARAGRAPH STRUCTURE:**
+    - Short, scannable paragraphs (2-4 sentences max)
+    - Clear topic sentences that introduce each paragraph's main point
+    - Generous spacing between sections for readability
+
+    4. VISUAL PLACEMENT AND CAPTIONS:
        - You must generate ${imageCount} DISTINCT visual concepts to accompany the post.
        - The first visual will be the Header Image.
-       - For the remaining ${Math.max(0, imageCount - 1)} visuals, you MUST insert a placeholder marker EXACTLY like this: [[IMAGE_X]] (where X is the number, e.g., [[IMAGE_1]], [[IMAGE_2]]) directly into the markdown text flow where the image should visually appear (e.g., after a relevant paragraph).
-    
+       - For the remaining ${Math.max(0, imageCount - 1)} visuals, you MUST insert a placeholder marker EXACTLY like this: [[IMAGE_X]] (where X is the number, e.g., [[IMAGE_1]], [[IMAGE_2]]) directly into the markdown text flow where the image should visually appear.
+       - Place images AFTER relevant paragraphs that describe or introduce the visual concept
+       - When multiple images relate to the same topic, group them together for carousel display
+
+    **IMAGE CAPTION STYLE:**
+    - Each image MUST have a descriptive caption that appears in light gray below the image
+    - Captions can be either:
+      a) A description of what the image shows (e.g., "An infographic of the common house plant, String of Turtles, with information on origins, care essentials and growth patterns.")
+      b) The prompt used to create the image when relevant (e.g., 'Prompt: Create an infographic about this plant focusing on interesting information.')
+      c) A contextual explanation (e.g., "Nano Banana Pro can help you (and your guests) get in the holiday party spirit with visuals for party invitations and reminders with a prompt like 'Create a claymation scene showing a dog dressed up like an elf in a winter wonderland.'")
+    - Captions should be 1-2 sentences, informative, and add value beyond the image
+
     The blog post must be written in ${language}.
     The visual prompts must be in English.
-    
+
     RETURN FORMAT:
     Use strict delimiters.
-    
+
     |||TITLE|||
-    (Insert Main Title Here)
+    (Insert Main Title Here - compelling and descriptive)
     |||SUBTITLE|||
-    (Insert a short, engaging subtitle here)
+    (Insert a short, engaging subtitle that expands on the title)
     |||METADATA|||
     (Insert "Author Name | Date | Category")
     |||CONTENT|||
-    (Insert Full Markdown Content Here, starting with Introduction, and including [[IMAGE_X]] markers within the body. Do not repeat Title/Subtitle)
-    
+    (Insert Full Markdown Content Here, starting with Introduction, and including [[IMAGE_X]] markers within the body. Do not repeat Title/Subtitle. Follow ALL styling requirements above meticulously.)
+
     |||VISUALS|||
-    (List the ${imageCount} visual prompts strictly in this format:)
-    1. PROMPT: [Detailed prompt] || CAPTION: [Short caption]
-    2. PROMPT: [Detailed prompt] || CAPTION: [Short caption]
+    (List the ${imageCount} visual prompts strictly in this format - captions should be detailed and contextual:)
+    1. PROMPT: [Detailed prompt for image generation] || CAPTION: [Detailed contextual caption - either describing the image, explaining its relevance to the content, or including the prompt in a narrative way]
+    2. PROMPT: [Detailed prompt for image generation] || CAPTION: [Detailed contextual caption]
     ...
     `;
 
@@ -856,34 +893,66 @@ export async function generateBlogFromVideo(
     onProgress("ANALYZING VIDEO CONTENT...");
     
     const writingPrompt = `
-    You are an expert content creator and technical writer.
-    
+    You are an expert content creator and technical writer who creates visually stunning, highly polished blog posts for major tech publications.
+
     Your task:
     1. Access and analyze the content of this YouTube video: ${videoUrl} using Google Search tools to find transcripts, summaries, or descriptions.
     2. Understand the core topic, key takeaways, and speaker's perspective.
     3. Write a COMPLETELY NEW, COMPREHENSIVE blog post based on the video content.
-       - Structure it with clear headings.
-       - Capture the detailed points made in the video.
        - The tone should be engaging and educational.
-       - FORMATTING: Use RICH MARKDOWN formatting.
     4. Create a prompt for a header image that visually represents the core topic.
-    
+
+    ===== PROFESSIONAL STYLING REQUIREMENTS (CRITICAL - FOLLOW EXACTLY) =====
+
+    **HEADER HIERARCHY:**
+    - Use ## for NUMBERED major section titles (e.g., "## 1. Key Insights from the Video", "## 2. Deep Dive into the Technology")
+    - Use ### for subsection titles and feature callouts
+    - Section numbers create scannable, organized content structure
+
+    **HYPERLINKS (BLUE TEXT):**
+    - Include [linked text](url) markdown hyperlinks throughout the content
+    - Link product names, feature names, and technical terms to relevant documentation or pages
+    - Example: "The speaker discusses [TensorFlow](https://tensorflow.org) and its capabilities"
+    - Links appear as blue clickable text - use them liberally for important terms
+
+    **BOLD TEXT FOR EMPHASIS:**
+    - Use **bold text** for:
+      - Category labels that start bullet points (e.g., "**Key Takeaway:** The most important insight...")
+      - Feature names within sentences (e.g., "With **advanced machine learning**, the system can...")
+      - Key phrases that need emphasis
+
+    **HIGHLIGHTED TERMINOLOGY:**
+    - Use <span class="blue">text</span> for key concepts, terminology, or important phrases that should stand out in BLUE but are NOT links
+    - Use this sparingly for maximum impact on truly important terms
+
+    **BULLETED LISTS:**
+    - Use bulleted lists (-) for:
+      - Key takeaways and insights
+      - Step-by-step breakdowns
+      - Feature highlights
+    - Each bullet should start with a **bold label** when categorizing different points
+
+    **PARAGRAPH STRUCTURE:**
+    - Short, scannable paragraphs (2-4 sentences max)
+    - Clear topic sentences that introduce each paragraph's main point
+    - Generous spacing between sections for readability
+
     The blog post must be written in ${language}.
     The image prompt must be in English.
-    
+
     RETURN FORMAT:
     Do NOT use JSON. Use the following strict delimiters to separate the sections:
-    
+
     |||TITLE|||
-    (Insert Title Here)
+    (Insert compelling, descriptive Title Here)
     |||SUBTITLE|||
-    (Insert Subtitle)
+    (Insert engaging Subtitle that expands on the title)
     |||METADATA|||
     (Insert Author | Date | Category)
     |||IMAGE_PROMPT|||
-    (Insert Image Prompt Here)
+    (Insert detailed Image Prompt Here for a visually striking header image)
     |||CONTENT|||
-    (Insert Full Markdown Content Here)
+    (Insert Full Markdown Content Here - follow ALL styling requirements above meticulously)
     `;
 
     let result = { title: "", subtitle: "", metadata: "", content: "", image_prompt: "" };
