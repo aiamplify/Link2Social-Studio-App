@@ -452,20 +452,20 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish }) => {
                         return null;
                     } else {
                         return (
-                            <span key={idx} className="prose prose-invert max-w-none">
+                            <span key={idx} className="prose prose-lg prose-invert max-w-none">
                                 {part.split('\n').map((line, i) => {
                                     if (!line.trim()) return <br key={i}/>;
                                     if (line.startsWith('# ')) return null;
                                     if (line.startsWith('## ')) return <h2 key={i} className="text-2xl font-bold mt-12 mb-6 text-white">{line.replace('## ', '')}</h2>;
                                     if (line.startsWith('### ')) return <h3 key={i} className="text-xl font-bold mt-10 mb-4 text-slate-200">{line.replace('### ', '')}</h3>;
-                                    if (line.startsWith('- ')) return <li key={i} className="ml-4 list-disc mb-3 pl-2">{line.replace('- ', '')}</li>;
-                                    
+                                    if (line.startsWith('- ')) return <li key={i} className="ml-4 list-disc mb-3 pl-2 text-lg leading-relaxed">{line.replace('- ', '')}</li>;
+
                                     const richText = line
                                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                                         .replace(/<span class="blue">(.*?)<\/span>/g, '<span class="text-orange-400 font-semibold">$1</span>')
                                         .replace(/<u>(.*?)<\/u>/g, '<span class="underline decoration-orange-500 decoration-2 underline-offset-4">$1</span>');
 
-                                    return <p key={i} className="mb-6" dangerouslySetInnerHTML={{ __html: richText }} />;
+                                    return <p key={i} className="mb-6 text-lg leading-relaxed" dangerouslySetInnerHTML={{ __html: richText }} />;
                                 })}
                             </span>
                         );

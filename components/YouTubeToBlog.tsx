@@ -223,9 +223,9 @@ const YouTubeToBlog: React.FC = () => {
                       </div>
                       <div className="p-8 md:p-10 bg-slate-900/30">
                           <h1 className="text-3xl font-bold text-white mb-6 font-sans">{result.title}</h1>
-                          <div className="prose prose-invert prose-slate max-w-none font-sans prose-headings:font-bold prose-headings:text-slate-200 prose-p:text-slate-300 prose-a:text-red-400 prose-code:text-red-300 prose-code:bg-red-900/20 prose-code:px-1 prose-code:rounded prose-pre:bg-slate-950 prose-pre:border prose-pre:border-white/10">
+                          <div className="prose prose-lg prose-invert prose-slate max-w-none font-sans prose-headings:font-bold prose-headings:text-slate-200 prose-p:text-slate-300 prose-p:leading-relaxed prose-a:text-red-400 prose-code:text-red-300 prose-code:bg-red-900/20 prose-code:px-1 prose-code:rounded prose-pre:bg-slate-950 prose-pre:border prose-pre:border-white/10">
                               {result.content.split('\n').map((line, i) => (
-                                  <p key={i} className="whitespace-pre-wrap">{line}</p>
+                                  <p key={i} className="whitespace-pre-wrap text-lg leading-relaxed">{line}</p>
                               ))}
                           </div>
                       </div>
