@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useRef, useCallback } from 'react';
-import { 
-    Youtube, Loader2, AlertCircle, Download, Copy, Check, Image as ImageIcon, Sparkles, 
+import { generateYouTubeThumbnail } from '../services/geminiService';
+import {
+    Youtube, Loader2, AlertCircle, Download, Copy, Check, Image as ImageIcon, Sparkles,
     RefreshCw, Wand2, X, Upload, Palette, Type, Layout, Eye, EyeOff, Maximize, Minimize,
     ChevronDown, ChevronUp, Settings, Sliders, Target, TrendingUp, BarChart3, Users, Hash,
     Zap, Award, Star, Heart, MousePointer, Lightbulb, CheckCircle2, XCircle, Info, HelpCircle,
@@ -145,6 +146,10 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [videoDescription, setVideoDescription] = useState('');
     const [targetAudience, setTargetAudience] = useState('');
     const [keywords, setKeywords] = useState('');
+
+    // Reference images (up to 2)
+    const [referenceImages, setReferenceImages] = useState<{ data: string; name: string }[]>([]);
+    const referenceInputRef = useRef<HTMLInputElement>(null);
     
     // Style configuration
     const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0]);
@@ -171,6 +176,7 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [brightness, setBrightness] = useState(100);
     const [contrast, setContrast] = useState(100);
     const [saturation, setSaturation] = useState(100);
+    const [useViralResearch, setUseViralResearch] = useState(true);
     
     // A/B Testing
     const [variants, setVariants] = useState<ThumbnailVariant[]>([]);
@@ -200,6 +206,39 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const imageInputRef = useRef<HTMLInputElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
+    // Handle reference image upload
+    const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+
+        Array.from(files).forEach(file => {
+            if (referenceImages.length >= 2) {
+                setError("Maximum 2 reference images allowed");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result as string;
+                const base64Data = base64.split(',')[1];
+                setReferenceImages(prev => {
+                    if (prev.length >= 2) return prev;
+                    return [...prev, { data: base64Data, name: file.name }];
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Reset input
+        if (referenceInputRef.current) {
+            referenceInputRef.current.value = '';
+        }
+    };
+
+    const removeReferenceImage = (index: number) => {
+        setReferenceImages(prev => prev.filter((_, i) => i !== index));
+    };
+
     // Generate thumbnail using Gemini
     const generateThumbnail = async (variantId?: string) => {
         if (!videoTitle.trim()) {
@@ -212,107 +251,63 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
         setLoadingStage('Analyzing video concept...');
 
         try {
-            // Build the prompt
+            // Build the full topic/prompt
             const styleToUse = selectedStyle.id === 'custom' ? customStyle : selectedStyle.name;
-            
-            let prompt = `Create a highly engaging YouTube thumbnail for a video titled "${videoTitle}".`;
-            
+
+            let topic = videoTitle;
             if (videoDescription) {
-                prompt += ` Video description: ${videoDescription}.`;
+                topic += `. Description: ${videoDescription}`;
             }
-            
             if (targetAudience) {
-                prompt += ` Target audience: ${targetAudience}.`;
+                topic += `. Target audience: ${targetAudience}`;
             }
-            
             if (keywords) {
-                prompt += ` Keywords to incorporate: ${keywords}.`;
+                topic += `. Keywords: ${keywords}`;
             }
-            
-            prompt += ` Style: ${styleToUse}.`;
-            prompt += ` Aspect ratio: ${aspectRatio.label}.`;
-            
+
+            // Build emotion/style hints
+            let emotion = '';
             if (includeFace) {
-                prompt += ` Include an expressive human face showing strong emotion.`;
+                emotion = 'expressive human face with strong emotion';
             }
-            
             if (includeEmoji) {
-                prompt += ` Include relevant emojis as visual elements.`;
+                emotion += emotion ? ', with emojis' : 'with emojis';
             }
-            
             if (includeArrows) {
-                prompt += ` Include attention-grabbing arrows pointing to key elements.`;
+                emotion += emotion ? ', attention-grabbing arrows' : 'attention-grabbing arrows';
             }
-            
             if (includeCircles) {
-                prompt += ` Include circles highlighting important areas.`;
+                emotion += emotion ? ', highlight circles' : 'highlight circles';
             }
-            
-            prompt += ` Make it eye-catching, high contrast, and optimized for click-through rate.`;
-            prompt += ` The thumbnail should stand out in YouTube search results and suggested videos.`;
 
-            setLoadingStage('Generating thumbnail...');
+            // Use first reference image if available
+            const sourceImage = referenceImages.length > 0 ? referenceImages[0].data : null;
 
-            // Simulate API call (replace with actual Gemini image generation)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // For demo, create a placeholder image
-            const canvas = document.createElement('canvas');
-            canvas.width = aspectRatio.width;
-            canvas.height = aspectRatio.height;
-            const ctx = canvas.getContext('2d');
-            
-            if (ctx) {
-                // Create gradient background
-                const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-                selectedStyle.colors.forEach((color, i) => {
-                    gradient.addColorStop(i / (selectedStyle.colors.length - 1), color);
-                });
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Add text overlay if enabled
-                if (showTextOverlay && textOverlay) {
-                    ctx.font = `bold ${textSize}px ${selectedFont}`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    
-                    if (textShadow) {
-                        ctx.shadowColor = 'rgba(0,0,0,0.8)';
-                        ctx.shadowBlur = 10;
-                        ctx.shadowOffsetX = 4;
-                        ctx.shadowOffsetY = 4;
-                    }
-                    
-                    if (textStroke) {
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = 8;
-                        ctx.strokeText(textOverlay, canvas.width / 2, canvas.height / 2);
-                    }
-                    
-                    ctx.fillStyle = textColor;
-                    ctx.fillText(textOverlay, canvas.width / 2, canvas.height / 2);
-                }
-                
-                // Add "DEMO" watermark
-                ctx.font = 'bold 24px Arial';
-                ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                ctx.textAlign = 'right';
-                ctx.fillText('AI Generated Demo', canvas.width - 20, canvas.height - 20);
+            // Call the actual Gemini API
+            const imageData = await generateYouTubeThumbnail(
+                topic,
+                styleToUse,
+                emotion,
+                textOverlay,
+                useViralResearch,
+                sourceImage,
+                (stage) => setLoadingStage(stage)
+            );
+
+            if (!imageData) {
+                throw new Error("Failed to generate thumbnail - no image data returned");
             }
-            
-            const imageData = canvas.toDataURL('image/png').split(',')[1];
-            
+
             if (variantId) {
                 // Update specific variant
-                setVariants(prev => prev.map(v => 
-                    v.id === variantId 
+                setVariants(prev => prev.map(v =>
+                    v.id === variantId
                         ? { ...v, imageData, isGenerating: false, score: Math.floor(Math.random() * 30) + 70 }
                         : v
                 ));
             } else {
                 setGeneratedImage(imageData);
-                
+
                 // Add to history
                 const newVariant: ThumbnailVariant = {
                     id: `variant_${Date.now()}`,
@@ -326,9 +321,10 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                 };
                 setHistory(prev => [newVariant, ...prev].slice(0, 20));
             }
-            
+
             setLoadingStage('');
         } catch (err: any) {
+            console.error("Thumbnail generation error:", err);
             setError(err.message || "Failed to generate thumbnail");
         } finally {
             setLoading(false);
@@ -602,6 +598,63 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                         </div>
                     </div>
 
+                    {/* Reference Images */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <ImageIcon className="w-5 h-5 text-red-400" />
+                            Reference Images
+                            <span className="text-xs text-slate-500 font-normal">(Optional - up to 2)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Upload images to use as reference or to edit/transform into a thumbnail
+                        </p>
+
+                        <input
+                            ref={referenceInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleReferenceImageUpload}
+                            className="hidden"
+                        />
+
+                        {referenceImages.length < 2 && (
+                            <button
+                                onClick={() => referenceInputRef.current?.click()}
+                                className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl hover:border-red-500/30 hover:bg-red-500/5 transition-all flex flex-col items-center gap-2 text-slate-400 hover:text-red-400"
+                            >
+                                <Upload className="w-6 h-6" />
+                                <span className="text-sm">Click to upload reference image</span>
+                                <span className="text-xs text-slate-500">{2 - referenceImages.length} slot{2 - referenceImages.length !== 1 ? 's' : ''} remaining</span>
+                            </button>
+                        )}
+
+                        {referenceImages.length > 0 && (
+                            <div className="grid grid-cols-2 gap-3">
+                                {referenceImages.map((img, idx) => (
+                                    <div key={idx} className="relative group rounded-lg overflow-hidden border border-white/10">
+                                        <img
+                                            src={`data:image/png;base64,${img.data}`}
+                                            alt={img.name}
+                                            className="w-full h-24 object-cover"
+                                        />
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <button
+                                                onClick={() => removeReferenceImage(idx)}
+                                                className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+                                            <span className="text-xs text-slate-300 truncate block">{img.name}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Style Selection */}
                     <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
                         <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -793,6 +846,23 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
 
                         {showAdvanced && (
                             <div className="space-y-4 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
+                                {/* AI Research */}
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                                    <div className="flex items-center gap-2">
+                                        <Search className="w-4 h-4 text-red-400" />
+                                        <div>
+                                            <span className="text-sm text-white font-medium">Use Viral Trend Research</span>
+                                            <p className="text-xs text-slate-400">AI analyzes current high-CTR thumbnails</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setUseViralResearch(!useViralResearch)}
+                                        className={`w-10 h-6 rounded-full transition-colors ${useViralResearch ? 'bg-red-500' : 'bg-slate-700'}`}
+                                    >
+                                        <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useViralResearch ? 'translate-x-5' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
                                 {/* Visual Elements */}
                                 <div className="space-y-3">
                                     <label className="text-xs text-slate-500">Visual Elements</label>
