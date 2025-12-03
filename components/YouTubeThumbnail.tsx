@@ -15,7 +15,7 @@ import {
     Clock, Calendar, Bookmark, MoreHorizontal, Filter, Search, Edit3, Move, RotateCcw,
     Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Droplet, Sun, Moon,
     Contrast, Crop, FlipHorizontal, FlipVertical, ZoomIn, ZoomOut, Lock, Unlock, Link,
-    Shuffle, Copy as CopyIcon, Clipboard, FileText, Video, Film, Camera, Aperture
+    Shuffle, Copy as CopyIcon, Clipboard, FileText, Video, Film, Camera, Aperture, BookOpen
 } from 'lucide-react';
 import ImageViewer from './ImageViewer';
 
@@ -112,6 +112,80 @@ const ASPECT_RATIOS = [
     { id: '9:16', label: '9:16 (Shorts)', width: 720, height: 1280 },
 ];
 
+// Thumbnail templates
+const THUMBNAIL_TEMPLATES = [
+    {
+        id: 'none',
+        name: 'No Template',
+        description: 'Start from scratch',
+        layout: '',
+        icon: Layout,
+    },
+    {
+        id: 'face-left-text-right',
+        name: 'Face Left + Text Right',
+        description: 'Person on left side with bold text on the right',
+        layout: 'Place a person/face prominently on the LEFT side of the image (taking up about 40% of the frame). Add large, bold text on the RIGHT side. Use a gradient or solid color background.',
+        icon: Users,
+    },
+    {
+        id: 'face-right-text-left',
+        name: 'Face Right + Text Left',
+        description: 'Person on right side with bold text on the left',
+        layout: 'Place a person/face prominently on the RIGHT side of the image (taking up about 40% of the frame). Add large, bold text on the LEFT side. Use a gradient or solid color background.',
+        icon: Users,
+    },
+    {
+        id: 'centered-face-text-top',
+        name: 'Centered Face + Text Top',
+        description: 'Person centered with text overlay at top',
+        layout: 'Place a person/face CENTERED in the image with a dramatic expression. Add large bold text at the TOP of the image. Background should have depth or bokeh effect.',
+        icon: Target,
+    },
+    {
+        id: 'split-screen',
+        name: 'Split Screen Before/After',
+        description: 'Two-panel comparison layout',
+        layout: 'Create a SPLIT SCREEN design with a clear vertical divider. Left side shows "before" or problem state, right side shows "after" or solution. Add contrasting colors to each side.',
+        icon: Layers,
+    },
+    {
+        id: 'reaction-style',
+        name: 'Reaction Style',
+        description: 'Exaggerated reaction with arrows/circles',
+        layout: 'Large shocked/surprised FACE expression taking up most of the frame. Add RED ARROWS pointing to something interesting. Include CIRCLE highlights. Very high contrast and saturation.',
+        icon: AlertCircle,
+    },
+    {
+        id: 'tutorial-style',
+        name: 'Tutorial/How-To',
+        description: 'Step numbers with preview',
+        layout: 'Show a PREVIEW of the end result or topic. Add a large NUMBER or "HOW TO" text. Include smaller supporting visuals. Clean, educational look with good contrast.',
+        icon: BookOpen,
+    },
+    {
+        id: 'listicle',
+        name: 'Listicle/Top 10',
+        description: 'Big number with topic imagery',
+        layout: 'Feature a LARGE NUMBER prominently (like "TOP 10" or "5 WAYS"). Add relevant imagery around/behind the number. Bold, eye-catching colors. Text describing the list topic.',
+        icon: Hash,
+    },
+    {
+        id: 'product-showcase',
+        name: 'Product Showcase',
+        description: 'Product front and center with person',
+        layout: 'Product or item PROMINENTLY displayed in the center. Person holding or reacting to the product on one side. Clean background with subtle gradient. Price or key feature highlighted.',
+        icon: Star,
+    },
+    {
+        id: 'dramatic-text',
+        name: 'Dramatic Text Only',
+        description: 'Bold text with dramatic background',
+        layout: 'MASSIVE bold text taking up most of the frame. Dramatic background (flames, lightning, gradient). High contrast. Text should be slightly 3D or have strong shadow/glow effects.',
+        icon: Type,
+    },
+];
+
 // Thumbnail variant interface
 interface ThumbnailVariant {
     id: string;
@@ -147,8 +221,23 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [targetAudience, setTargetAudience] = useState('');
     const [keywords, setKeywords] = useState('');
     const [customPrompt, setCustomPrompt] = useState('');
+    const [videoScript, setVideoScript] = useState('');
 
-    // Reference images (up to 2)
+    // Template selection
+    const [selectedTemplate, setSelectedTemplate] = useState(THUMBNAIL_TEMPLATES[0]);
+
+    // Self portrait image (image of user to include in thumbnail)
+    const [selfPortrait, setSelfPortrait] = useState<{ data: string; name: string } | null>(null);
+    const selfPortraitInputRef = useRef<HTMLInputElement>(null);
+
+    // Style reference image (another thumbnail to use as style reference)
+    const [styleReference, setStyleReference] = useState<{ data: string; name: string } | null>(null);
+    const styleReferenceInputRef = useRef<HTMLInputElement>(null);
+
+    // Script file input ref
+    const scriptFileInputRef = useRef<HTMLInputElement>(null);
+
+    // Legacy reference images (keeping for backward compatibility)
     const [referenceImages, setReferenceImages] = useState<{ data: string; name: string }[]>([]);
     const referenceInputRef = useRef<HTMLInputElement>(null);
     
@@ -252,6 +341,59 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
         }
     };
 
+    // Handle self portrait upload
+    const handleSelfPortraitUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            const base64Data = base64.split(',')[1];
+            setSelfPortrait({ data: base64Data, name: file.name });
+        };
+        reader.readAsDataURL(file);
+
+        if (selfPortraitInputRef.current) {
+            selfPortraitInputRef.current.value = '';
+        }
+    };
+
+    // Handle style reference upload
+    const handleStyleReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            const base64Data = base64.split(',')[1];
+            setStyleReference({ data: base64Data, name: file.name });
+        };
+        reader.readAsDataURL(file);
+
+        if (styleReferenceInputRef.current) {
+            styleReferenceInputRef.current.value = '';
+        }
+    };
+
+    // Handle script file upload
+    const handleScriptFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const text = reader.result as string;
+            setVideoScript(text);
+        };
+        reader.readAsText(file);
+
+        if (scriptFileInputRef.current) {
+            scriptFileInputRef.current.value = '';
+        }
+    };
+
     const removeReferenceImage = (index: number) => {
         setReferenceImages(prev => prev.filter((_, i) => i !== index));
     };
@@ -281,13 +423,37 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
             if (keywords) {
                 topic += `. Keywords: ${keywords}`;
             }
+
+            // Add video script context if provided
+            if (videoScript.trim()) {
+                const scriptSummary = videoScript.length > 1000
+                    ? videoScript.substring(0, 1000) + '...'
+                    : videoScript;
+                topic += `. VIDEO SCRIPT CONTEXT: ${scriptSummary}`;
+            }
+
+            // Add template layout instructions
+            if (selectedTemplate.id !== 'none' && selectedTemplate.layout) {
+                topic += `. TEMPLATE LAYOUT: ${selectedTemplate.layout}`;
+            }
+
             if (customPrompt) {
                 topic += `. SPECIFIC INSTRUCTIONS: ${customPrompt}`;
             }
 
+            // Add style reference context
+            if (styleReference) {
+                topic += `. STYLE REFERENCE: Use the provided reference image as inspiration for the visual style, color palette, and composition.`;
+            }
+
+            // Add self portrait context
+            if (selfPortrait) {
+                topic += `. PERSON IMAGE: Include the person from the provided portrait image in the thumbnail. Make them look natural and integrated into the scene.`;
+            }
+
             // Build emotion/style hints
             let emotion = '';
-            if (includeFace) {
+            if (includeFace || selfPortrait) {
                 emotion = 'expressive human face with strong emotion';
             }
             if (includeEmoji) {
@@ -300,8 +466,8 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                 emotion += emotion ? ', highlight circles' : 'highlight circles';
             }
 
-            // Use first reference image if available
-            const sourceImage = referenceImages.length > 0 ? referenceImages[0].data : null;
+            // Determine source image priority: selfPortrait > styleReference > referenceImages
+            const sourceImage = selfPortrait?.data || styleReference?.data || (referenceImages.length > 0 ? referenceImages[0].data : null);
 
             // Call the actual Gemini API
             const imageData = await generateYouTubeThumbnail(
@@ -794,14 +960,210 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                     Give specific instructions for colors, layout, elements, composition, etc.
                                 </p>
                             </div>
+
+                            {/* Video Script Input */}
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                <label className="text-xs text-slate-500 flex items-center gap-2">
+                                    <FileText className="w-3 h-3 text-red-400" />
+                                    Video Script (Optional)
+                                </label>
+                                <p className="text-xs text-slate-400 mb-2">
+                                    Paste your script or upload a .txt file to generate a thumbnail based on your video content
+                                </p>
+                                <input
+                                    ref={scriptFileInputRef}
+                                    type="file"
+                                    accept=".txt,.md"
+                                    onChange={handleScriptFileUpload}
+                                    className="hidden"
+                                />
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => scriptFileInputRef.current?.click()}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-slate-300 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        Upload .txt File
+                                    </button>
+                                    {videoScript && (
+                                        <button
+                                            onClick={() => setVideoScript('')}
+                                            className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm text-red-400 flex items-center gap-1 transition-colors"
+                                        >
+                                            <X className="w-3 h-3" />
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                                <textarea
+                                    value={videoScript}
+                                    onChange={(e) => setVideoScript(e.target.value)}
+                                    placeholder="Paste your video script here... The AI will analyze it to create a relevant thumbnail."
+                                    className="w-full h-32 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-red-500/50 resize-none"
+                                />
+                                {videoScript && (
+                                    <p className="text-xs text-emerald-400">
+                                        Script loaded: {videoScript.length} characters
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    {/* Reference Images */}
+                    {/* Template Selection */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Layout className="w-5 h-5 text-red-400" />
+                            Thumbnail Template
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Choose a layout template to guide the AI in creating your thumbnail
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2">
+                            {THUMBNAIL_TEMPLATES.map(template => {
+                                const Icon = template.icon;
+                                return (
+                                    <button
+                                        key={template.id}
+                                        onClick={() => setSelectedTemplate(template)}
+                                        className={`p-3 rounded-xl text-left transition-all ${
+                                            selectedTemplate.id === template.id
+                                                ? 'bg-red-500/20 border border-red-500/30'
+                                                : 'bg-slate-950/50 border border-white/5 hover:border-white/10'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Icon className={`w-4 h-4 ${selectedTemplate.id === template.id ? 'text-red-400' : 'text-slate-500'}`} />
+                                            <span className="text-xs font-medium text-white truncate">{template.name}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 line-clamp-2">{template.description}</p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Your Photo (Self Portrait) */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Users className="w-5 h-5 text-red-400" />
+                            Your Photo
+                            <span className="text-xs text-slate-500 font-normal">(Optional)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Upload a photo of yourself to include in the thumbnail
+                        </p>
+
+                        <input
+                            ref={selfPortraitInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleSelfPortraitUpload}
+                            className="hidden"
+                        />
+
+                        {!selfPortrait ? (
+                            <button
+                                onClick={() => selfPortraitInputRef.current?.click()}
+                                className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl hover:border-red-500/30 hover:bg-red-500/5 transition-all flex flex-col items-center gap-2 text-slate-400 hover:text-red-400"
+                            >
+                                <Upload className="w-6 h-6" />
+                                <span className="text-sm">Upload your photo</span>
+                                <span className="text-xs text-slate-500">For inclusion in the thumbnail</span>
+                            </button>
+                        ) : (
+                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${selfPortrait.data}`}
+                                    alt={selfPortrait.name}
+                                    className="w-full h-32 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <button
+                                        onClick={() => selfPortraitInputRef.current?.click()}
+                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setSelfPortrait(null)}
+                                        className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+                                    <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> Your photo uploaded
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Style Reference Image */}
                     <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
                         <h3 className="text-lg font-bold text-white flex items-center gap-2">
                             <ImageIcon className="w-5 h-5 text-red-400" />
-                            Reference Images
+                            Style Reference
+                            <span className="text-xs text-slate-500 font-normal">(Optional)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Upload another thumbnail or image as style inspiration
+                        </p>
+
+                        <input
+                            ref={styleReferenceInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleStyleReferenceUpload}
+                            className="hidden"
+                        />
+
+                        {!styleReference ? (
+                            <button
+                                onClick={() => styleReferenceInputRef.current?.click()}
+                                className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl hover:border-red-500/30 hover:bg-red-500/5 transition-all flex flex-col items-center gap-2 text-slate-400 hover:text-red-400"
+                            >
+                                <Upload className="w-6 h-6" />
+                                <span className="text-sm">Upload reference image</span>
+                                <span className="text-xs text-slate-500">For style & composition inspiration</span>
+                            </button>
+                        ) : (
+                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${styleReference.data}`}
+                                    alt={styleReference.name}
+                                    className="w-full h-32 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <button
+                                        onClick={() => styleReferenceInputRef.current?.click()}
+                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setStyleReference(null)}
+                                        className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+                                    <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> Style reference uploaded
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Legacy Reference Images - Hidden by default, keeping for compatibility */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4 hidden">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <ImageIcon className="w-5 h-5 text-red-400" />
+                            Additional Reference Images
                             <span className="text-xs text-slate-500 font-normal">(Optional - up to 2)</span>
                         </h3>
                         <p className="text-xs text-slate-400">
