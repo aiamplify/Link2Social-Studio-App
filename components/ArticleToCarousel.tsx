@@ -226,6 +226,17 @@ const ArticleToCarousel: React.FC = () => {
         });
     };
 
+    // Helper function to convert base64 to Blob
+    const base64ToBlob = (base64: string, mimeType: string = 'image/png'): Blob => {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: mimeType });
+    };
+
     const sendCarouselToWebhook = async () => {
         if (!result) return;
 
@@ -238,31 +249,34 @@ const ArticleToCarousel: React.FC = () => {
             const hashtagRegex = /#\w+/g;
             const hashtags = result.caption.match(hashtagRegex) || [];
 
-            // Prepare the payload
-            const payload = {
-                slides: result.slides.map((slide, idx) => ({
-                    order: slide.order,
-                    title: slide.title,
-                    content: slide.content,
-                    imageData: slide.imageData, // Base64 image data
-                })),
-                caption: result.caption,
-                hashtags: hashtags,
-                platform: selectedPlatform.name,
-                style: selectedStyle.name,
-                totalSlides: result.slides.length,
-                timestamp: new Date().toISOString(),
-            };
+            // Create FormData to send binary images
+            const formData = new FormData();
 
-            // Use no-cors mode to bypass CORS restrictions for webhook
-            // This means we can't read the response, but the request will still be sent
+            // Add each slide image as binary data
+            result.slides.forEach((slide, idx) => {
+                if (slide.imageData) {
+                    const blob = base64ToBlob(slide.imageData, 'image/png');
+                    formData.append(`slide_${idx + 1}`, blob, `slide_${idx + 1}.png`);
+                }
+                // Add slide metadata
+                formData.append(`slide_${idx + 1}_title`, slide.title || '');
+                formData.append(`slide_${idx + 1}_content`, slide.content || '');
+                formData.append(`slide_${idx + 1}_order`, String(slide.order));
+            });
+
+            // Add other metadata
+            formData.append('caption', result.caption);
+            formData.append('hashtags', JSON.stringify(hashtags));
+            formData.append('platform', selectedPlatform.name);
+            formData.append('style', selectedStyle.name);
+            formData.append('totalSlides', String(result.slides.length));
+            formData.append('timestamp', new Date().toISOString());
+
+            // Send as multipart/form-data with binary images
             const response = await fetch('http://localhost:5678/webhook-test/fe6cc4c0-b169-48dd-a42a-59afced8a456', {
                 method: 'POST',
                 mode: 'no-cors',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
+                body: formData,
             });
 
             // With no-cors mode, response.ok will be false and response.type will be 'opaque'
