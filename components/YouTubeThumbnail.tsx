@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useCallback } from 'react';
-import { generateYouTubeThumbnail } from '../services/geminiService';
+import { generateYouTubeThumbnail, editImageWithGemini } from '../services/geminiService';
 import {
     Youtube, Loader2, AlertCircle, Download, Copy, Check, Image as ImageIcon, Sparkles,
     RefreshCw, Wand2, X, Upload, Palette, Type, Layout, Eye, EyeOff, Maximize, Minimize,
@@ -178,15 +178,31 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [contrast, setContrast] = useState(100);
     const [saturation, setSaturation] = useState(100);
     const [useViralResearch, setUseViralResearch] = useState(true);
-    
+
     // A/B Testing
     const [variants, setVariants] = useState<ThumbnailVariant[]>([]);
     const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
     const [showABPanel, setShowABPanel] = useState(false);
-    
+
     // Batch generation
-    const [batchCount, setBatchCount] = useState(3);
+    const [batchCount, setBatchCount] = useState(5);
     const [batchMode, setBatchMode] = useState(false);
+
+    // Multi-version generation
+    const [generateMultiple, setGenerateMultiple] = useState(false);
+    const [alternativeCount, setAlternativeCount] = useState(5);
+    const [alternatives, setAlternatives] = useState<ThumbnailVariant[]>([]);
+
+    // Iterate/Modify modal
+    const [showModifyModal, setShowModifyModal] = useState(false);
+    const [modifyingImage, setModifyingImage] = useState<string | null>(null);
+    const [modifyPrompt, setModifyPrompt] = useState('');
+    const [isModifying, setIsModifying] = useState(false);
+
+    // Send to Veo3 Director modal
+    const [showSendToVeoModal, setShowSendToVeoModal] = useState(false);
+    const [sendingImageData, setSendingImageData] = useState<string | null>(null);
+    const [veoPosition, setVeoPosition] = useState<'first' | 'last'>('first');
     
     // Generation state
     const [loading, setLoading] = useState(false);
@@ -380,6 +396,169 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
         setLoading(false);
         setBatchMode(false);
         setLoadingStage('');
+    };
+
+    // Generate multiple alternative versions
+    const generateMultipleVersions = async () => {
+        if (!videoTitle.trim()) {
+            setError("Please enter a video title");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        setAlternatives([]);
+
+        const newAlternatives: ThumbnailVariant[] = [];
+
+        // Create placeholders for all versions
+        for (let i = 0; i < alternativeCount; i++) {
+            newAlternatives.push({
+                id: `alt_${Date.now()}_${i}`,
+                name: `Version ${i + 1}`,
+                imageData: null,
+                style: selectedStyle.name,
+                textOverlay,
+                textPosition,
+                isGenerating: true,
+            });
+        }
+        setAlternatives(newAlternatives);
+
+        // Generate each version
+        for (let i = 0; i < alternativeCount; i++) {
+            setLoadingStage(`Generating version ${i + 1} of ${alternativeCount}...`);
+
+            try {
+                const styleToUse = selectedStyle.id === 'custom' ? customStyle : selectedStyle.name;
+
+                let topic = videoTitle;
+                if (videoDescription) topic += `. Description: ${videoDescription}`;
+                if (targetAudience) topic += `. Target audience: ${targetAudience}`;
+                if (keywords) topic += `. Keywords: ${keywords}`;
+                if (customPrompt) topic += `. SPECIFIC INSTRUCTIONS: ${customPrompt}`;
+
+                // Add variation instruction for diversity
+                topic += `. CREATE VARIATION ${i + 1}: Make this version unique and different from others while keeping the core message.`;
+
+                let emotion = '';
+                if (includeFace) emotion = 'expressive human face with strong emotion';
+                if (includeEmoji) emotion += emotion ? ', with emojis' : 'with emojis';
+                if (includeArrows) emotion += emotion ? ', attention-grabbing arrows' : 'attention-grabbing arrows';
+                if (includeCircles) emotion += emotion ? ', highlight circles' : 'highlight circles';
+
+                const sourceImage = referenceImages.length > 0 ? referenceImages[0].data : null;
+
+                const imageData = await generateYouTubeThumbnail(
+                    topic,
+                    styleToUse,
+                    emotion,
+                    textOverlay,
+                    useViralResearch && i === 0, // Only research for first version
+                    sourceImage,
+                    (stage) => setLoadingStage(`Version ${i + 1}: ${stage}`)
+                );
+
+                setAlternatives(prev => prev.map((alt, idx) =>
+                    idx === i
+                        ? { ...alt, imageData, isGenerating: false, score: Math.floor(Math.random() * 30) + 70 }
+                        : alt
+                ));
+            } catch (err) {
+                console.error(`Error generating version ${i + 1}:`, err);
+                setAlternatives(prev => prev.map((alt, idx) =>
+                    idx === i ? { ...alt, isGenerating: false } : alt
+                ));
+            }
+        }
+
+        setLoading(false);
+        setLoadingStage('');
+    };
+
+    // Open modify modal for an image
+    const openModifyModal = (imageData: string) => {
+        setModifyingImage(imageData);
+        setModifyPrompt('');
+        setShowModifyModal(true);
+    };
+
+    // Handle modifying an image with AI
+    const handleModifyImage = async () => {
+        if (!modifyingImage || !modifyPrompt.trim()) {
+            setError("Please enter modification instructions");
+            return;
+        }
+
+        setIsModifying(true);
+        setError(null);
+
+        try {
+            const modifiedImage = await editImageWithGemini(
+                modifyingImage,
+                'image/png',
+                modifyPrompt
+            );
+
+            if (modifiedImage) {
+                setGeneratedImage(modifiedImage);
+
+                // Add to history
+                const newVariant: ThumbnailVariant = {
+                    id: `modified_${Date.now()}`,
+                    name: `Modified ${history.length + 1}`,
+                    imageData: modifiedImage,
+                    style: selectedStyle.name,
+                    textOverlay,
+                    textPosition,
+                    isGenerating: false,
+                    score: Math.floor(Math.random() * 30) + 70,
+                };
+                setHistory(prev => [newVariant, ...prev].slice(0, 20));
+
+                setShowModifyModal(false);
+                setModifyingImage(null);
+                setModifyPrompt('');
+            } else {
+                throw new Error("Failed to modify image");
+            }
+        } catch (err: any) {
+            console.error("Modify image error:", err);
+            setError(err.message || "Failed to modify image");
+        } finally {
+            setIsModifying(false);
+        }
+    };
+
+    // Open send to Veo modal
+    const openSendToVeoModal = (imageData: string) => {
+        setSendingImageData(imageData);
+        setVeoPosition('first');
+        setShowSendToVeoModal(true);
+    };
+
+    // Send image to Veo3 Director tool
+    const sendToVeoDirector = () => {
+        if (!sendingImageData) return;
+
+        // Save to localStorage for the Veo3 Director tool to pick up
+        const veoData = {
+            imageData: sendingImageData,
+            position: veoPosition,
+            timestamp: new Date().toISOString(),
+            source: 'thumbnail-creator',
+            title: videoTitle || 'Thumbnail',
+        };
+
+        localStorage.setItem('veo3_reference_image', JSON.stringify(veoData));
+
+        // Show success message
+        setError(null);
+        setShowSendToVeoModal(false);
+        setSendingImageData(null);
+
+        // Alert user (could be replaced with a toast notification)
+        alert(`Image saved as ${veoPosition} reference image for Veo3 Director! Navigate to B-Roll Creator to use it.`);
     };
 
     // Download thumbnail
@@ -1027,24 +1206,48 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                         )}
                     </div>
 
-                    {/* Generate Button */}
-                    <button
-                        onClick={() => generateThumbnail()}
-                        disabled={loading || !videoTitle}
-                        className="w-full py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-red-500/25 hover:shadow-red-500/40"
-                    >
-                        {loading && !batchMode ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                {loadingStage || 'Generating...'}
-                            </>
-                        ) : (
-                            <>
-                                <Wand2 className="w-5 h-5" />
-                                Generate Thumbnail
-                            </>
-                        )}
-                    </button>
+                    {/* Generate Buttons */}
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => generateThumbnail()}
+                            disabled={loading || !videoTitle}
+                            className="w-full py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-red-500/25 hover:shadow-red-500/40"
+                        >
+                            {loading && !batchMode && alternatives.length === 0 ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    {loadingStage || 'Generating...'}
+                                </>
+                            ) : (
+                                <>
+                                    <Wand2 className="w-5 h-5" />
+                                    Generate Thumbnail
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={() => generateMultipleVersions()}
+                            disabled={loading || !videoTitle}
+                            className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40"
+                        >
+                            {loading && alternatives.length > 0 ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    {loadingStage || 'Generating versions...'}
+                                </>
+                            ) : (
+                                <>
+                                    <Grid3X3 className="w-5 h-5" />
+                                    Generate {alternativeCount} Versions
+                                </>
+                            )}
+                        </button>
+
+                        <p className="text-xs text-slate-500 text-center">
+                            Generate multiple variations to find the perfect thumbnail
+                        </p>
+                    </div>
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400">
@@ -1117,8 +1320,8 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                     {/* Single View */}
                     {!loading && viewMode === 'single' && generatedImage && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                            <div className="rounded-2xl overflow-hidden border border-white/10 bg-slate-900/50">
-                                <img 
+                            <div className="rounded-2xl overflow-hidden border border-white/10 bg-slate-900/50 relative group">
+                                <img
                                     src={`data:image/png;base64,${generatedImage}`}
                                     alt="Generated Thumbnail"
                                     className="w-full h-auto"
@@ -1126,6 +1329,30 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                         filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
                                     }}
                                 />
+                                {/* Action Overlay */}
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                    <button
+                                        onClick={() => openModifyModal(generatedImage)}
+                                        className="px-4 py-2 bg-orange-500/90 hover:bg-orange-500 rounded-lg text-white text-sm font-bold flex items-center gap-2 transition-colors"
+                                    >
+                                        <Edit3 className="w-4 h-4" />
+                                        Modify
+                                    </button>
+                                    <button
+                                        onClick={() => openSendToVeoModal(generatedImage)}
+                                        className="px-4 py-2 bg-indigo-500/90 hover:bg-indigo-500 rounded-lg text-white text-sm font-bold flex items-center gap-2 transition-colors"
+                                    >
+                                        <Video className="w-4 h-4" />
+                                        Send to Veo3
+                                    </button>
+                                    <button
+                                        onClick={() => downloadThumbnail(generatedImage)}
+                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-bold flex items-center gap-2 transition-colors"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Download
+                                    </button>
+                                </div>
                             </div>
 
                             {/* CTR Score */}
@@ -1140,6 +1367,84 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                     <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: '82%' }} />
                                 </div>
                                 <p className="text-xs text-slate-500 mt-2">Based on visual elements, contrast, and text placement</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Multiple Alternatives Grid */}
+                    {!loading && alternatives.length > 0 && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Grid3X3 className="w-5 h-5 text-red-400" />
+                                    Alternative Versions ({alternatives.filter(a => a.imageData).length}/{alternativeCount})
+                                </h3>
+                                <button
+                                    onClick={() => setAlternatives([])}
+                                    className="text-xs text-slate-500 hover:text-white"
+                                >
+                                    Clear All
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                                {alternatives.map((alt, idx) => (
+                                    <div key={alt.id} className="relative group rounded-xl overflow-hidden border border-white/10 bg-slate-900/50 aspect-video">
+                                        {alt.isGenerating ? (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
+                                            </div>
+                                        ) : alt.imageData ? (
+                                            <>
+                                                <img
+                                                    src={`data:image/png;base64,${alt.imageData}`}
+                                                    alt={alt.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                                {/* Hover Actions */}
+                                                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
+                                                    <span className="text-xs text-white font-bold">{alt.name}</span>
+                                                    <div className="flex gap-1">
+                                                        <button
+                                                            onClick={() => {
+                                                                setGeneratedImage(alt.imageData);
+                                                                setViewMode('single');
+                                                            }}
+                                                            className="p-1.5 bg-emerald-500/80 hover:bg-emerald-500 rounded text-white"
+                                                            title="Use this"
+                                                        >
+                                                            <Check className="w-3 h-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => openModifyModal(alt.imageData!)}
+                                                            className="p-1.5 bg-orange-500/80 hover:bg-orange-500 rounded text-white"
+                                                            title="Modify"
+                                                        >
+                                                            <Edit3 className="w-3 h-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => openSendToVeoModal(alt.imageData!)}
+                                                            className="p-1.5 bg-indigo-500/80 hover:bg-indigo-500 rounded text-white"
+                                                            title="Send to Veo3"
+                                                        >
+                                                            <Video className="w-3 h-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => downloadThumbnail(alt.imageData!, `thumbnail_v${idx + 1}`)}
+                                                            className="p-1.5 bg-white/20 hover:bg-white/30 rounded text-white"
+                                                            title="Download"
+                                                        >
+                                                            <Download className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="absolute inset-0 flex items-center justify-center text-slate-600">
+                                                <XCircle className="w-6 h-6" />
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
@@ -1219,7 +1524,7 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                     )}
 
                     {/* Empty State */}
-                    {!loading && !generatedImage && variants.length === 0 && (
+                    {!loading && !generatedImage && variants.length === 0 && alternatives.length === 0 && (
                         <div className="p-12 rounded-2xl bg-slate-900/50 border border-white/5 border-dashed flex flex-col items-center justify-center text-center">
                             <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4">
                                 <Youtube className="w-8 h-8 text-red-400" />
@@ -1232,6 +1537,185 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                     )}
                 </div>
             </div>
+
+            {/* Modify Image Modal */}
+            {showModifyModal && modifyingImage && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Edit3 className="w-5 h-5 text-orange-400" />
+                                    Modify Image
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowModifyModal(false);
+                                        setModifyingImage(null);
+                                        setModifyPrompt('');
+                                    }}
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <X className="w-5 h-5 text-slate-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Preview Image */}
+                            <div className="rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${modifyingImage}`}
+                                    alt="Image to modify"
+                                    className="w-full h-auto"
+                                />
+                            </div>
+
+                            {/* Modification Prompt */}
+                            <div className="space-y-2">
+                                <label className="text-sm text-slate-400">How would you like to modify this image?</label>
+                                <textarea
+                                    value={modifyPrompt}
+                                    onChange={(e) => setModifyPrompt(e.target.value)}
+                                    placeholder="e.g., Make the background more vibrant, add a glow effect around the text, change the person's expression to more excited, add a red border..."
+                                    className="w-full h-32 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-500/50 resize-none"
+                                />
+                            </div>
+
+                            {/* Quick Suggestions */}
+                            <div className="flex flex-wrap gap-2">
+                                {['Add glow effect', 'More contrast', 'Change background', 'Add border', 'Brighter colors'].map(suggestion => (
+                                    <button
+                                        key={suggestion}
+                                        onClick={() => setModifyPrompt(prev => prev ? `${prev}, ${suggestion.toLowerCase()}` : suggestion)}
+                                        className="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
+                                    >
+                                        {suggestion}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => {
+                                        setShowModifyModal(false);
+                                        setModifyingImage(null);
+                                        setModifyPrompt('');
+                                    }}
+                                    className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-medium transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleModifyImage}
+                                    disabled={isModifying || !modifyPrompt.trim()}
+                                    className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-500/50 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    {isModifying ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Modifying...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Wand2 className="w-4 h-4" />
+                                            Apply Changes
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Send to Veo3 Director Modal */}
+            {showSendToVeoModal && sendingImageData && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-md w-full">
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Video className="w-5 h-5 text-indigo-400" />
+                                    Send to Veo3 Director
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowSendToVeoModal(false);
+                                        setSendingImageData(null);
+                                    }}
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <X className="w-5 h-5 text-slate-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Preview Image */}
+                            <div className="rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${sendingImageData}`}
+                                    alt="Image to send"
+                                    className="w-full h-auto"
+                                />
+                            </div>
+
+                            {/* Position Selection */}
+                            <div className="space-y-3">
+                                <label className="text-sm text-slate-400">Use this image as:</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setVeoPosition('first')}
+                                        className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${
+                                            veoPosition === 'first'
+                                                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300'
+                                                : 'bg-slate-800/50 border-white/10 text-slate-400 hover:border-white/20'
+                                        }`}
+                                    >
+                                        <ArrowLeft className="w-6 h-6" />
+                                        <span className="text-sm font-medium">First Frame</span>
+                                        <span className="text-xs opacity-70">Opening image</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setVeoPosition('last')}
+                                        className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${
+                                            veoPosition === 'last'
+                                                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300'
+                                                : 'bg-slate-800/50 border-white/10 text-slate-400 hover:border-white/20'
+                                        }`}
+                                    >
+                                        <ArrowRight className="w-6 h-6" />
+                                        <span className="text-sm font-medium">Last Frame</span>
+                                        <span className="text-xs opacity-70">Ending image</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => {
+                                        setShowSendToVeoModal(false);
+                                        setSendingImageData(null);
+                                    }}
+                                    className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-medium transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={sendToVeoDirector}
+                                    className="flex-1 px-4 py-3 bg-indigo-500 hover:bg-indigo-600 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <Video className="w-4 h-4" />
+                                    Send to Veo3
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
