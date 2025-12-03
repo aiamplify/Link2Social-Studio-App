@@ -146,6 +146,7 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [videoDescription, setVideoDescription] = useState('');
     const [targetAudience, setTargetAudience] = useState('');
     const [keywords, setKeywords] = useState('');
+    const [customPrompt, setCustomPrompt] = useState('');
 
     // Reference images (up to 2)
     const [referenceImages, setReferenceImages] = useState<{ data: string; name: string }[]>([]);
@@ -263,6 +264,9 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
             }
             if (keywords) {
                 topic += `. Keywords: ${keywords}`;
+            }
+            if (customPrompt) {
+                topic += `. SPECIFIC INSTRUCTIONS: ${customPrompt}`;
             }
 
             // Build emotion/style hints
@@ -594,6 +598,22 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                         className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200"
                                     />
                                 </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs text-slate-500 flex items-center gap-2">
+                                    <Wand2 className="w-3 h-3 text-red-400" />
+                                    Custom Prompt (Optional)
+                                </label>
+                                <textarea
+                                    value={customPrompt}
+                                    onChange={(e) => setCustomPrompt(e.target.value)}
+                                    placeholder="Describe exactly what you want the thumbnail to look like... e.g., 'A shocked face on the left side, bright yellow background, large red arrow pointing to a laptop screen showing code, text should be in the top right corner'"
+                                    className="w-full h-24 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-red-500/50 resize-none"
+                                />
+                                <p className="text-xs text-slate-500">
+                                    Give specific instructions for colors, layout, elements, composition, etc.
+                                </p>
                             </div>
                         </div>
                     </div>
