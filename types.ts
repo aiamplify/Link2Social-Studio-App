@@ -14,7 +14,9 @@ export enum ViewMode {
   BLOG_TO_BLOG = 'BLOG_TO_BLOG',
   YOUTUBE_THUMBNAIL = 'YOUTUBE_THUMBNAIL',
   VIDEO_BROLL = 'VIDEO_BROLL',
-  VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER'
+  VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER',
+  DRAFTS = 'DRAFTS',
+  SCHEDULED = 'SCHEDULED'
 }
 
 export interface D3Node extends SimulationNodeDatum {
@@ -111,6 +113,25 @@ export interface PublishedPost extends BlogPostResult {
     publishDate: string;
     slug: string;
 }
+
+// Draft post - saved but not yet published
+export interface DraftPost extends BlogPostResult {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    status: 'draft';
+}
+
+// Scheduled post - will be auto-published at scheduled time
+export interface ScheduledPost extends BlogPostResult {
+    id: string;
+    scheduledDate: string;
+    createdAt: string;
+    status: 'scheduled';
+}
+
+// Union type for all post states
+export type PostState = DraftPost | ScheduledPost | PublishedPost;
 
 export interface ScriptScene {
     id: string;
