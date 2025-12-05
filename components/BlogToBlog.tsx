@@ -88,9 +88,11 @@ interface SEOScore {
 
 interface BlogToBlogProps {
     onPublish?: (post: BlogPostResult) => void;
+    onSaveDraft?: (post: BlogPostResult) => Promise<void>;
+    onSchedule?: (post: BlogPostResult, scheduledDate: Date) => Promise<void>;
 }
 
-const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish }) => {
+const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSchedule }) => {
     // Input Modes
     const [inputMode, setInputMode] = useState<'url' | 'file' | 'topic'>('url');
     
@@ -140,7 +142,15 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish }) => {
     const [fullScreenImage, setFullScreenImage] = useState<{src: string, alt: string} | null>(null);
     const [activeImageId, setActiveImageId] = useState<string | null>(null);
     const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
-    
+
+    // Draft & Schedule State
+    const [isSavingDraft, setIsSavingDraft] = useState(false);
+    const [draftSaved, setDraftSaved] = useState(false);
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [scheduleDate, setScheduleDate] = useState('');
+    const [scheduleTime, setScheduleTime] = useState('');
+    const [isScheduling, setIsScheduling] = useState(false);
+
     // Refs
     const imageInputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -370,6 +380,56 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish }) => {
             const finalPost = { ...result, content: editContent };
             onPublish(finalPost);
             setIsPublished(true);
+        }
+    };
+
+    const handleSaveDraft = async () => {
+        if (!result || !onSaveDraft) return;
+
+        setIsSavingDraft(true);
+        try {
+            const finalPost = { ...result, content: editContent };
+            await onSaveDraft(finalPost);
+            setDraftSaved(true);
+            setTimeout(() => setDraftSaved(false), 3000);
+        } catch (err: any) {
+            setError(err.message || 'Failed to save draft');
+        } finally {
+            setIsSavingDraft(false);
+        }
+    };
+
+    const openScheduleModal = () => {
+        // Default to tomorrow at 9 AM
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(9, 0, 0, 0);
+        setScheduleDate(tomorrow.toISOString().split('T')[0]);
+        setScheduleTime('09:00');
+        setShowScheduleModal(true);
+    };
+
+    const handleSchedulePost = async () => {
+        if (!result || !onSchedule || !scheduleDate || !scheduleTime) return;
+
+        const scheduledDate = new Date(`${scheduleDate}T${scheduleTime}`);
+        if (scheduledDate <= new Date()) {
+            setError('Scheduled time must be in the future');
+            return;
+        }
+
+        setIsScheduling(true);
+        try {
+            const finalPost = { ...result, content: editContent };
+            await onSchedule(finalPost, scheduledDate);
+            setShowScheduleModal(false);
+            setScheduleDate('');
+            setScheduleTime('');
+            setResult(null); // Clear the result after scheduling
+        } catch (err: any) {
+            setError(err.message || 'Failed to schedule post');
+        } finally {
+            setIsScheduling(false);
         }
     };
 
@@ -902,16 +962,41 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish }) => {
                                     </button>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    {/* Save Draft Button */}
+                                    {onSaveDraft && (
+                                        <button
+                                            onClick={handleSaveDraft}
+                                            disabled={isSavingDraft}
+                                            className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-all ${draftSaved ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'}`}
+                                        >
+                                            {isSavingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : draftSaved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                                            {draftSaved ? "Saved!" : "Save Draft"}
+                                        </button>
+                                    )}
+
+                                    {/* Schedule Button */}
+                                    {onSchedule && (
+                                        <button
+                                            onClick={openScheduleModal}
+                                            className="px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 rounded-lg text-violet-300 flex items-center gap-2 text-sm font-medium transition-all border border-violet-500/30"
+                                        >
+                                            <Calendar className="w-4 h-4" />
+                                            Schedule
+                                        </button>
+                                    )}
+
+                                    {/* Publish Button */}
                                     {onPublish && (
-                                        <button 
+                                        <button
                                             onClick={handlePublish}
                                             disabled={isPublished}
                                             className={`px-4 py-2 rounded-lg text-white flex items-center gap-2 text-sm font-bold transition-all ${isPublished ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300' : 'bg-orange-500 hover:bg-orange-600'}`}
                                         >
                                             {isPublished ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                                            {isPublished ? "Published!" : "Publish"}
+                                            {isPublished ? "Published!" : "Publish Now"}
                                         </button>
                                     )}
+
                                     {viewMode === 'html' && (
                                         <button onClick={copyHtml} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-slate-300 flex items-center gap-2 text-sm font-medium">
                                             {copiedContent ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
@@ -1020,6 +1105,75 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish }) => {
                     )}
                 </div>
             </div>
+
+            {/* Schedule Modal */}
+            {showScheduleModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowScheduleModal(false)} />
+                    <div className="relative w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-white/10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-violet-400" />
+                            Schedule Post
+                        </h3>
+
+                        <p className="text-slate-400 text-sm mb-6">
+                            Choose when you want this post to be automatically published.
+                        </p>
+
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-sm text-slate-400 mb-2">Date</label>
+                                <input
+                                    type="date"
+                                    value={scheduleDate}
+                                    onChange={(e) => setScheduleDate(e.target.value)}
+                                    min={new Date().toISOString().split('T')[0]}
+                                    className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-white focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-400 mb-2">Time</label>
+                                <input
+                                    type="time"
+                                    value={scheduleTime}
+                                    onChange={(e) => setScheduleTime(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-white focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
+                                />
+                            </div>
+                        </div>
+
+                        {scheduleDate && scheduleTime && (
+                            <div className="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20 mb-6">
+                                <p className="text-sm text-violet-300 flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4" />
+                                    Will publish on {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString()}
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowScheduleModal(false)}
+                                className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-white font-medium transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSchedulePost}
+                                disabled={!scheduleDate || !scheduleTime || isScheduling}
+                                className="flex-1 py-3 bg-violet-500 hover:bg-violet-600 rounded-xl text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {isScheduling ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Check className="w-4 h-4" />
+                                )}
+                                Schedule
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

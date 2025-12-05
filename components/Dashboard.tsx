@@ -10,13 +10,18 @@ import BlogToBlog from './BlogToBlog';
 import YouTubeThumbnail from './YouTubeThumbnail';
 import BrollCreator from './BrollCreator';
 import ScriptVisualizer from './ScriptVisualizer';
+import DraftManager from './DraftManager';
+import ScheduledPosts from './ScheduledPosts';
 import Home from './Home';
 import IntroAnimation from './IntroAnimation';
-import { ViewMode, ArticleHistoryItem, BlogPostResult } from '../types';
-import { 
+import { ViewMode, ArticleHistoryItem, BlogPostResult, DraftPost, ScheduledPost } from '../types';
+import {
+    saveDraft, scheduleNewPost, publishPostImmediately
+} from '../services/postsService';
+import {
     Github, PenTool, FileText, Home as HomeIcon, CreditCard, Share2, Layout, Youtube, Video, LogOut, Clapperboard,
     Command, Search, Sparkles, Zap, TrendingUp, Clock, Star, ChevronRight, X, Settings, Bell, User,
-    BarChart3, Calendar, Palette, Wand2, Layers, Download, Upload, FolderOpen, Plus, ArrowRight,
+    BarChart3, Calendar, CalendarDays, Palette, Wand2, Layers, Download, Upload, FolderOpen, Plus, ArrowRight,
     Activity, Target, Eye, MousePointer, Heart, MessageSquare, Repeat, BookOpen, Lightbulb, Rocket,
     Crown, Diamond, Award, Flame, Timer, CheckCircle2, AlertCircle, Info, HelpCircle, Keyboard,
     Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid
@@ -155,6 +160,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
 
     const handleAddArticleHistory = (item: ArticleHistoryItem) => {
         setArticleHistory(prev => [item, ...prev]);
+    };
+
+    // Draft & Schedule handlers
+    const handleSaveDraft = async (post: BlogPostResult) => {
+        await saveDraft(post);
+    };
+
+    const handleSchedulePost = async (post: BlogPostResult, scheduledDate: Date) => {
+        await scheduleNewPost(post, scheduledDate);
+    };
+
+    const handleEditDraft = (draft: DraftPost) => {
+        // Navigate to blog editor - in a full implementation, this would load the draft
+        setCurrentView(ViewMode.BLOG_TO_BLOG);
+    };
+
+    const handleEditScheduled = (post: ScheduledPost) => {
+        // Navigate to blog editor - in a full implementation, this would load the scheduled post
+        setCurrentView(ViewMode.BLOG_TO_BLOG);
     };
 
     const getTimeAgo = (date: Date) => {
@@ -363,6 +387,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                             </button>
                         );
                     })}
+
+                    {/* Content Management Section */}
+                    {!sidebarCollapsed && (
+                        <div className="pt-4 pb-2 px-3">
+                            <span className="text-[10px] font-mono text-slate-600 uppercase tracking-wider">Content</span>
+                        </div>
+                    )}
+
+                    {/* Drafts */}
+                    <button
+                        onClick={() => setCurrentView(ViewMode.DRAFTS)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                            currentView === ViewMode.DRAFTS
+                                ? 'bg-violet-500/10 text-violet-300 border border-violet-500/20'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                        title={sidebarCollapsed ? 'Drafts' : undefined}
+                    >
+                        <FileText className={`w-5 h-5 ${currentView === ViewMode.DRAFTS ? 'text-violet-400' : ''}`} />
+                        {!sidebarCollapsed && (
+                            <span className="flex-1 text-left font-medium">Drafts</span>
+                        )}
+                    </button>
+
+                    {/* Scheduled Posts */}
+                    <button
+                        onClick={() => setCurrentView(ViewMode.SCHEDULED)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                            currentView === ViewMode.SCHEDULED
+                                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                        title={sidebarCollapsed ? 'Scheduled' : undefined}
+                    >
+                        <CalendarDays className={`w-5 h-5 ${currentView === ViewMode.SCHEDULED ? 'text-emerald-400' : ''}`} />
+                        {!sidebarCollapsed && (
+                            <span className="flex-1 text-left font-medium">Scheduled</span>
+                        )}
+                    </button>
                 </nav>
 
                 {/* Stats Card */}
@@ -658,7 +721,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                         )}
                         {currentView === ViewMode.BLOG_TO_BLOG && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <BlogToBlog onPublish={onPublishPost} />
+                                <BlogToBlog
+                                    onPublish={onPublishPost}
+                                    onSaveDraft={handleSaveDraft}
+                                    onSchedule={handleSchedulePost}
+                                />
                             </div>
                         )}
                         {currentView === ViewMode.YOUTUBE_THUMBNAIL && (
@@ -674,6 +741,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                         {currentView === ViewMode.VIDEO_SCRIPT_VISUALIZER && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <ScriptVisualizer />
+                            </div>
+                        )}
+                        {currentView === ViewMode.DRAFTS && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <DraftManager
+                                    onEditDraft={handleEditDraft}
+                                    onRefresh={() => {}}
+                                />
+                            </div>
+                        )}
+                        {currentView === ViewMode.SCHEDULED && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <ScheduledPosts
+                                    onEditPost={handleEditScheduled}
+                                    onRefresh={() => {}}
+                                />
                             </div>
                         )}
                     </div>
