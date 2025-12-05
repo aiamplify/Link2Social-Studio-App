@@ -7,8 +7,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeDatabase } from '../lib/db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Only allow POST requests
-    if (req.method !== 'POST') {
+    // Allow both GET and POST for easier initialization
+    if (req.method !== 'POST' && req.method !== 'GET') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
