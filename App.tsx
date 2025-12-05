@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navigation, { PageType } from './components/Navigation';
 import HomePage from './components/HomePage';
 import AboutPage from './components/AboutPage';
@@ -17,12 +17,84 @@ import { PublishedPost, BlogPostResult } from './types';
 
 type AppView = 'website' | 'login' | 'dashboard';
 
+// Session persistence keys
+const SESSION_KEYS = {
+  IS_AUTHENTICATED: 'l2s_isAuthenticated',
+  APP_VIEW: 'l2s_appView',
+  CURRENT_PAGE: 'l2s_currentPage',
+} as const;
+
+// Helper to safely get from localStorage
+const getStoredValue = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) return defaultValue;
+    return JSON.parse(stored) as T;
+  } catch {
+    return defaultValue;
+  }
+};
+
+// Helper to safely set localStorage
+const setStoredValue = <T,>(key: string, value: T): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Silently fail if localStorage is unavailable
+  }
+};
+
+// Helper to clear session
+const clearSession = (): void => {
+  try {
+    localStorage.removeItem(SESSION_KEYS.IS_AUTHENTICATED);
+    localStorage.removeItem(SESSION_KEYS.APP_VIEW);
+    localStorage.removeItem(SESSION_KEYS.CURRENT_PAGE);
+  } catch {
+    // Silently fail if localStorage is unavailable
+  }
+};
+
 const App: React.FC = () => {
-  const [appView, setAppView] = useState<AppView>('website');
-  const [currentPage, setCurrentPage] = useState<PageType>('home');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize state from localStorage for session persistence
+  const [appView, setAppView] = useState<AppView>(() =>
+    getStoredValue<AppView>(SESSION_KEYS.APP_VIEW, 'website')
+  );
+  const [currentPage, setCurrentPage] = useState<PageType>(() =>
+    getStoredValue<PageType>(SESSION_KEYS.CURRENT_PAGE, 'home')
+  );
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() =>
+    getStoredValue<boolean>(SESSION_KEYS.IS_AUTHENTICATED, false)
+  );
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Persist appView changes to localStorage
+  useEffect(() => {
+    setStoredValue(SESSION_KEYS.APP_VIEW, appView);
+  }, [appView]);
+
+  // Persist currentPage changes to localStorage
+  useEffect(() => {
+    setStoredValue(SESSION_KEYS.CURRENT_PAGE, currentPage);
+  }, [currentPage]);
+
+  // Persist authentication state to localStorage
+  useEffect(() => {
+    setStoredValue(SESSION_KEYS.IS_AUTHENTICATED, isAuthenticated);
+  }, [isAuthenticated]);
+
+  // On mount, validate session state consistency
+  useEffect(() => {
+    // If authenticated but not on dashboard, redirect to dashboard
+    if (isAuthenticated && appView !== 'dashboard') {
+      setAppView('dashboard');
+    }
+    // If not authenticated but on dashboard, redirect to website
+    if (!isAuthenticated && appView === 'dashboard') {
+      setAppView('website');
+    }
+  }, []); // Run only on mount
 
   // Handle login - UNCHANGED from original
   const handleLogin = (u: string, p: string) => {
@@ -46,8 +118,9 @@ const App: React.FC = () => {
     setPublishedPosts(prev => [newPost, ...prev]);
   };
 
-  // Handle logout - UNCHANGED from original
+  // Handle logout - clears session and returns to website
   const handleLogout = () => {
+    clearSession();
     setIsAuthenticated(false);
     setAppView('website');
     setCurrentPage('home');
