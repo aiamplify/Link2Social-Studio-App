@@ -58,22 +58,72 @@ interface UsageStats {
     favorites: number;
 }
 
+// Dashboard persistence keys
+const DASHBOARD_KEYS = {
+    CURRENT_VIEW: 'l2s_dashboardView',
+    SIDEBAR_COLLAPSED: 'l2s_sidebarCollapsed',
+    SHOW_INTRO: 'l2s_showIntro',
+} as const;
+
+// Helper to safely get from localStorage
+const getStoredValue = <T,>(key: string, defaultValue: T): T => {
+    try {
+        const stored = localStorage.getItem(key);
+        if (stored === null) return defaultValue;
+        return JSON.parse(stored) as T;
+    } catch {
+        return defaultValue;
+    }
+};
+
+// Helper to safely set localStorage
+const setStoredValue = <T,>(key: string, value: T): void => {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        // Silently fail if localStorage is unavailable
+    }
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
-    const [currentView, setCurrentView] = useState<ViewMode>(ViewMode.HOME);
-    const [showIntro, setShowIntro] = useState(true);
-    
+    // Initialize view state from localStorage for persistence across refreshes
+    const [currentView, setCurrentView] = useState<ViewMode>(() =>
+        getStoredValue<ViewMode>(DASHBOARD_KEYS.CURRENT_VIEW, ViewMode.HOME)
+    );
+    // Only show intro if user hasn't seen it before (persisted)
+    const [showIntro, setShowIntro] = useState<boolean>(() =>
+        getStoredValue<boolean>(DASHBOARD_KEYS.SHOW_INTRO, true)
+    );
+
     // Command Palette State
     const [showCommandPalette, setShowCommandPalette] = useState(false);
     const [commandSearch, setCommandSearch] = useState('');
     const commandInputRef = useRef<HTMLInputElement>(null);
-    
-    // Sidebar State
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    // Sidebar State - persisted
+    const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+        getStoredValue<boolean>(DASHBOARD_KEYS.SIDEBAR_COLLAPSED, false)
+    );
     const [showNotifications, setShowNotifications] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
-    
+
     // Theme State
     const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark');
+
+    // Persist currentView changes to localStorage
+    useEffect(() => {
+        setStoredValue(DASHBOARD_KEYS.CURRENT_VIEW, currentView);
+    }, [currentView]);
+
+    // Persist sidebarCollapsed changes to localStorage
+    useEffect(() => {
+        setStoredValue(DASHBOARD_KEYS.SIDEBAR_COLLAPSED, sidebarCollapsed);
+    }, [sidebarCollapsed]);
+
+    // Persist showIntro changes to localStorage
+    useEffect(() => {
+        setStoredValue(DASHBOARD_KEYS.SHOW_INTRO, showIntro);
+    }, [showIntro]);
     
     // Lifted History State for Persistence
     const [articleHistory, setArticleHistory] = useState<ArticleHistoryItem[]>([]);
