@@ -1,19 +1,5 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "functions": {
-    "api/*.ts": {
-      "runtime": "@vercel/node@3"
-    },
-    "api/**/*.ts": {
-      "runtime": "@vercel/node@3"
-    }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/publish-scheduled",
-      "schedule": "*/5 * * * *"
-    }
-  ]
+  "framework": "vite"
 }

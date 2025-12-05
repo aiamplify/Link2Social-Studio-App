@@ -1,266 +1,433 @@
 /**
- * Frontend service for interacting with the posts API
+ * Posts service using Supabase
  * Handles all CRUD operations for drafts, scheduled posts, and published posts
+ * Works directly from the browser - no API routes needed
  */
 
+import { supabase } from './supabaseClient';
 import { BlogPostResult, DraftPost, ScheduledPost, PublishedPost } from '../types';
 
-const API_BASE = '/api';
+// ==================== HELPER FUNCTIONS ====================
 
-// ==================== INITIALIZATION ====================
+function generateId(prefix: string): string {
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
 
-export async function initializeDatabase(): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${API_BASE}/init`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to initialize database');
-    }
-
-    return response.json();
+function generateSlug(title: string): string {
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
 // ==================== DRAFT OPERATIONS ====================
 
 export async function fetchDrafts(): Promise<DraftPost[]> {
-    const response = await fetch(`${API_BASE}/drafts`);
+    const { data, error } = await supabase
+        .from('drafts')
+        .select('*')
+        .order('updated_at', { ascending: false });
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to fetch drafts');
-    }
+    if (error) throw new Error(error.message);
 
-    return response.json();
+    return (data || []).map(row => ({
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle || '',
+        metadata: row.metadata || '',
+        content: row.content,
+        visuals: row.visuals || [],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        status: 'draft' as const
+    }));
 }
 
-export async function fetchDraft(id: string): Promise<DraftPost> {
-    const response = await fetch(`${API_BASE}/drafts/${id}`);
+export async function fetchDraft(id: string): Promise<DraftPost | null> {
+    const { data, error } = await supabase
+        .from('drafts')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to fetch draft');
+    if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        throw new Error(error.message);
     }
 
-    return response.json();
+    return {
+        id: data.id,
+        title: data.title,
+        subtitle: data.subtitle || '',
+        metadata: data.metadata || '',
+        content: data.content,
+        visuals: data.visuals || [],
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        status: 'draft'
+    };
 }
 
 export async function saveDraft(post: BlogPostResult): Promise<DraftPost> {
-    const response = await fetch(`${API_BASE}/drafts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(post)
-    });
+    const id = generateId('draft');
+    const now = new Date().toISOString();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to save draft');
-    }
+    const { data, error } = await supabase
+        .from('drafts')
+        .insert({
+            id,
+            title: post.title,
+            subtitle: post.subtitle,
+            metadata: post.metadata,
+            content: post.content,
+            visuals: post.visuals,
+            created_at: now,
+            updated_at: now
+        })
+        .select()
+        .single();
 
-    return response.json();
+    if (error) throw new Error(error.message);
+
+    return {
+        ...post,
+        id: data.id,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        status: 'draft'
+    };
 }
 
 export async function updateDraft(id: string, updates: Partial<BlogPostResult>): Promise<DraftPost> {
-    const response = await fetch(`${API_BASE}/drafts/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-    });
+    const { data, error } = await supabase
+        .from('drafts')
+        .update({
+            ...(updates.title && { title: updates.title }),
+            ...(updates.subtitle && { subtitle: updates.subtitle }),
+            ...(updates.metadata && { metadata: updates.metadata }),
+            ...(updates.content && { content: updates.content }),
+            ...(updates.visuals && { visuals: updates.visuals }),
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to update draft');
-    }
+    if (error) throw new Error(error.message);
 
-    return response.json();
+    return {
+        id: data.id,
+        title: data.title,
+        subtitle: data.subtitle || '',
+        metadata: data.metadata || '',
+        content: data.content,
+        visuals: data.visuals || [],
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        status: 'draft'
+    };
 }
 
 export async function deleteDraft(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/drafts/${id}`, {
-        method: 'DELETE'
-    });
+    const { error } = await supabase
+        .from('drafts')
+        .delete()
+        .eq('id', id);
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to delete draft');
-    }
+    if (error) throw new Error(error.message);
 }
 
 export async function publishDraftNow(id: string): Promise<PublishedPost> {
-    const response = await fetch(`${API_BASE}/drafts/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'publish' })
-    });
+    // Get the draft
+    const draft = await fetchDraft(id);
+    if (!draft) throw new Error('Draft not found');
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to publish draft');
-    }
+    // Publish it
+    const published = await publishPostImmediately(draft);
 
-    return response.json();
+    // Delete the draft
+    await deleteDraft(id);
+
+    return published;
 }
 
 export async function scheduleDraftPost(id: string, scheduledDate: Date): Promise<ScheduledPost> {
-    const response = await fetch(`${API_BASE}/drafts/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'schedule', scheduledDate: scheduledDate.toISOString() })
-    });
+    // Get the draft
+    const draft = await fetchDraft(id);
+    if (!draft) throw new Error('Draft not found');
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to schedule draft');
-    }
+    // Create scheduled post
+    const scheduled = await scheduleNewPost(draft, scheduledDate);
 
-    return response.json();
+    // Delete the draft
+    await deleteDraft(id);
+
+    return scheduled;
 }
 
 // ==================== SCHEDULED POST OPERATIONS ====================
 
 export async function fetchScheduledPosts(): Promise<ScheduledPost[]> {
-    const response = await fetch(`${API_BASE}/scheduled`);
+    const { data, error } = await supabase
+        .from('scheduled_posts')
+        .select('*')
+        .order('scheduled_date', { ascending: true });
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to fetch scheduled posts');
-    }
+    if (error) throw new Error(error.message);
 
-    return response.json();
+    return (data || []).map(row => ({
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle || '',
+        metadata: row.metadata || '',
+        content: row.content,
+        visuals: row.visuals || [],
+        scheduledDate: row.scheduled_date,
+        createdAt: row.created_at,
+        status: 'scheduled' as const
+    }));
 }
 
-export async function fetchScheduledPost(id: string): Promise<ScheduledPost> {
-    const response = await fetch(`${API_BASE}/scheduled/${id}`);
+export async function fetchScheduledPost(id: string): Promise<ScheduledPost | null> {
+    const { data, error } = await supabase
+        .from('scheduled_posts')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to fetch scheduled post');
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw new Error(error.message);
     }
 
-    return response.json();
+    return {
+        id: data.id,
+        title: data.title,
+        subtitle: data.subtitle || '',
+        metadata: data.metadata || '',
+        content: data.content,
+        visuals: data.visuals || [],
+        scheduledDate: data.scheduled_date,
+        createdAt: data.created_at,
+        status: 'scheduled'
+    };
 }
 
 export async function scheduleNewPost(post: BlogPostResult, scheduledDate: Date): Promise<ScheduledPost> {
-    const response = await fetch(`${API_BASE}/scheduled`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ post, scheduledDate: scheduledDate.toISOString() })
-    });
+    const id = generateId('scheduled');
+    const now = new Date().toISOString();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to schedule post');
-    }
+    const { data, error } = await supabase
+        .from('scheduled_posts')
+        .insert({
+            id,
+            title: post.title,
+            subtitle: post.subtitle,
+            metadata: post.metadata,
+            content: post.content,
+            visuals: post.visuals,
+            scheduled_date: scheduledDate.toISOString(),
+            created_at: now
+        })
+        .select()
+        .single();
 
-    return response.json();
+    if (error) throw new Error(error.message);
+
+    return {
+        ...post,
+        id: data.id,
+        scheduledDate: data.scheduled_date,
+        createdAt: data.created_at,
+        status: 'scheduled'
+    };
 }
 
 export async function reschedulePost(id: string, newDate: Date): Promise<ScheduledPost> {
-    const response = await fetch(`${API_BASE}/scheduled/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduledDate: newDate.toISOString() })
-    });
+    const { data, error } = await supabase
+        .from('scheduled_posts')
+        .update({ scheduled_date: newDate.toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to reschedule post');
-    }
+    if (error) throw new Error(error.message);
 
-    return response.json();
+    return {
+        id: data.id,
+        title: data.title,
+        subtitle: data.subtitle || '',
+        metadata: data.metadata || '',
+        content: data.content,
+        visuals: data.visuals || [],
+        scheduledDate: data.scheduled_date,
+        createdAt: data.created_at,
+        status: 'scheduled'
+    };
 }
 
 export async function deleteScheduledPost(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/scheduled/${id}`, {
-        method: 'DELETE'
-    });
+    const { error } = await supabase
+        .from('scheduled_posts')
+        .delete()
+        .eq('id', id);
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to delete scheduled post');
-    }
+    if (error) throw new Error(error.message);
 }
 
 export async function publishScheduledNow(id: string): Promise<PublishedPost> {
-    const response = await fetch(`${API_BASE}/scheduled/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'publish' })
-    });
+    // Get the scheduled post
+    const scheduled = await fetchScheduledPost(id);
+    if (!scheduled) throw new Error('Scheduled post not found');
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to publish scheduled post');
-    }
+    // Publish it
+    const published = await publishPostImmediately(scheduled);
 
-    return response.json();
+    // Delete from scheduled
+    await deleteScheduledPost(id);
+
+    return published;
 }
 
 export async function moveScheduledToDraft(id: string): Promise<DraftPost> {
-    const response = await fetch(`${API_BASE}/scheduled/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'to_draft' })
-    });
+    // Get the scheduled post
+    const scheduled = await fetchScheduledPost(id);
+    if (!scheduled) throw new Error('Scheduled post not found');
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to move to drafts');
-    }
+    // Create draft
+    const draft = await saveDraft(scheduled);
 
-    return response.json();
+    // Delete from scheduled
+    await deleteScheduledPost(id);
+
+    return draft;
 }
 
 // ==================== PUBLISHED POST OPERATIONS ====================
 
 export async function fetchPublishedPosts(): Promise<PublishedPost[]> {
-    const response = await fetch(`${API_BASE}/published`);
+    const { data, error } = await supabase
+        .from('published_posts')
+        .select('*')
+        .order('publish_date', { ascending: false });
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to fetch published posts');
-    }
+    if (error) throw new Error(error.message);
 
-    return response.json();
+    return (data || []).map(row => ({
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle || '',
+        metadata: row.metadata || '',
+        content: row.content,
+        visuals: row.visuals || [],
+        slug: row.slug,
+        publishDate: new Date(row.publish_date).toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+        })
+    }));
 }
 
-export async function fetchPublishedPost(idOrSlug: string): Promise<PublishedPost> {
-    const response = await fetch(`${API_BASE}/published/${idOrSlug}`);
+export async function fetchPublishedPost(idOrSlug: string): Promise<PublishedPost | null> {
+    const { data, error } = await supabase
+        .from('published_posts')
+        .select('*')
+        .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
+        .single();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to fetch published post');
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw new Error(error.message);
     }
 
-    return response.json();
+    return {
+        id: data.id,
+        title: data.title,
+        subtitle: data.subtitle || '',
+        metadata: data.metadata || '',
+        content: data.content,
+        visuals: data.visuals || [],
+        slug: data.slug,
+        publishDate: new Date(data.publish_date).toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+        })
+    };
 }
 
 export async function publishPostImmediately(post: BlogPostResult): Promise<PublishedPost> {
-    const response = await fetch(`${API_BASE}/published`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(post)
-    });
+    const id = generateId('published');
+    const slug = generateSlug(post.title);
+    const now = new Date().toISOString();
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to publish post');
-    }
+    const { data, error } = await supabase
+        .from('published_posts')
+        .insert({
+            id,
+            title: post.title,
+            subtitle: post.subtitle,
+            metadata: post.metadata,
+            content: post.content,
+            visuals: post.visuals,
+            slug,
+            publish_date: now,
+            created_at: now
+        })
+        .select()
+        .single();
 
-    return response.json();
+    if (error) throw new Error(error.message);
+
+    return {
+        ...post,
+        id: data.id,
+        slug: data.slug,
+        publishDate: new Date(data.publish_date).toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+        })
+    };
 }
 
 export async function deletePublishedPost(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/published/${id}`, {
-        method: 'DELETE'
-    });
+    const { error } = await supabase
+        .from('published_posts')
+        .delete()
+        .eq('id', id);
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.details || error.error || 'Failed to delete published post');
+    if (error) throw new Error(error.message);
+}
+
+// ==================== AUTO-PUBLISH SCHEDULED POSTS ====================
+
+/**
+ * Check for and publish any scheduled posts that are due
+ * Call this on app load or when viewing scheduled posts
+ */
+export async function publishDuePosts(): Promise<PublishedPost[]> {
+    const now = new Date().toISOString();
+
+    // Get all posts that are due
+    const { data: duePosts, error } = await supabase
+        .from('scheduled_posts')
+        .select('*')
+        .lte('scheduled_date', now);
+
+    if (error) throw new Error(error.message);
+
+    const publishedPosts: PublishedPost[] = [];
+
+    for (const post of duePosts || []) {
+        try {
+            const published = await publishScheduledNow(post.id);
+            publishedPosts.push(published);
+            console.log(`Auto-published: ${post.title}`);
+        } catch (err) {
+            console.error(`Failed to auto-publish ${post.id}:`, err);
+        }
     }
+
+    return publishedPosts;
 }
 
 // ==================== UTILITY FUNCTIONS ====================
