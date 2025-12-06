@@ -49,3 +49,18 @@ export interface DbPublishedPost {
     publish_date: string;
     created_at: string;
 }
+
+export interface DbContentBundleDraft {
+    id: string;
+    title: string;
+    image_data: string | null;       // Base64 encoded PNG
+    citations: any;                   // JSONB array of {uri, title}
+    social_posts: any;                // JSONB array of {platform, content}
+    source_input: string;
+    input_mode: string;
+    style: string;
+    platforms: any;                   // JSONB array of platform strings
+    language: string;
+    created_at: string;
+    updated_at: string;
+}

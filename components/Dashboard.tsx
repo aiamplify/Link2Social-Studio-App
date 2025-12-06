@@ -12,6 +12,7 @@ import BrollCreator from './BrollCreator';
 import ScriptVisualizer from './ScriptVisualizer';
 import DraftManager from './DraftManager';
 import ScheduledPosts from './ScheduledPosts';
+import ContentBundleDrafts from './ContentBundleDrafts';
 import Home from './Home';
 import IntroAnimation from './IntroAnimation';
 import { ViewMode, ArticleHistoryItem, BlogPostResult, DraftPost, ScheduledPost } from '../types';
@@ -24,7 +25,7 @@ import {
     BarChart3, Calendar, CalendarDays, Palette, Wand2, Layers, Download, Upload, FolderOpen, Plus, ArrowRight,
     Activity, Target, Eye, MousePointer, Heart, MessageSquare, Repeat, BookOpen, Lightbulb, Rocket,
     Crown, Diamond, Award, Flame, Timer, CheckCircle2, AlertCircle, Info, HelpCircle, Keyboard,
-    Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid
+    Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid, Archive
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -476,6 +477,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                             <span className="flex-1 text-left font-medium">Scheduled</span>
                         )}
                     </button>
+
+                    {/* Content Bundle Drafts */}
+                    <button
+                        onClick={() => setCurrentView(ViewMode.CONTENT_BUNDLE_DRAFTS)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                            currentView === ViewMode.CONTENT_BUNDLE_DRAFTS
+                                ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                        title={sidebarCollapsed ? 'Saved Bundles' : undefined}
+                    >
+                        <Archive className={`w-5 h-5 ${currentView === ViewMode.CONTENT_BUNDLE_DRAFTS ? 'text-purple-400' : ''}`} />
+                        {!sidebarCollapsed && (
+                            <span className="flex-1 text-left font-medium">Saved Bundles</span>
+                        )}
+                    </button>
                 </nav>
 
                 {/* Stats Card */}
@@ -541,7 +558,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                     <div className="flex items-center gap-4">
                         {/* Breadcrumb */}
                         <div className="flex items-center gap-2 text-sm">
-                            <button 
+                            <button
                                 onClick={() => setCurrentView(ViewMode.HOME)}
                                 className="text-slate-500 hover:text-white transition-colors"
                             >
@@ -551,7 +568,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                                 <>
                                     <ChevronRight className="w-4 h-4 text-slate-600" />
                                     <span className="text-white font-medium">
-                                        {quickActions.find(a => a.action === currentView)?.label || 'Home'}
+                                        {quickActions.find(a => a.action === currentView)?.label ||
+                                         currentView === ViewMode.DRAFTS ? 'Drafts' :
+                                         currentView === ViewMode.SCHEDULED ? 'Scheduled' :
+                                         currentView === ViewMode.CONTENT_BUNDLE_DRAFTS ? 'Saved Bundles' :
+                                         'Home'}
                                     </span>
                                 </>
                             )}
@@ -805,6 +826,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <ScheduledPosts
                                     onEditPost={handleEditScheduled}
+                                    onRefresh={() => {}}
+                                />
+                            </div>
+                        )}
+                        {currentView === ViewMode.CONTENT_BUNDLE_DRAFTS && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <ContentBundleDrafts
                                     onRefresh={() => {}}
                                 />
                             </div>

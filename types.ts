@@ -16,7 +16,8 @@ export enum ViewMode {
   VIDEO_BROLL = 'VIDEO_BROLL',
   VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER',
   DRAFTS = 'DRAFTS',
-  SCHEDULED = 'SCHEDULED'
+  SCHEDULED = 'SCHEDULED',
+  CONTENT_BUNDLE_DRAFTS = 'CONTENT_BUNDLE_DRAFTS'
 }
 
 export interface D3Node extends SimulationNodeDatum {
@@ -132,6 +133,27 @@ export interface ScheduledPost extends BlogPostResult {
 
 // Union type for all post states
 export type PostState = DraftPost | ScheduledPost | PublishedPost;
+
+// Content Bundle types (for ArticleToInfographic / Content Bundle Creator)
+export interface ContentBundleResult {
+    imageData: string | null;           // Base64 encoded PNG infographic
+    citations: Citation[];              // Web sources/references
+    socialPosts: SocialPost[];          // Platform-specific posts
+    sourceInput: string;                // Original URL or topic text
+    inputMode: 'url' | 'prompt' | 'upload';
+    style: string;                      // Style preset used
+    platforms: string[];                // Target platforms
+    language: string;                   // Output language
+}
+
+// Draft content bundle - saved but not yet used
+export interface ContentBundleDraft extends ContentBundleResult {
+    id: string;
+    title: string;                      // Auto-generated or user-provided title
+    createdAt: string;
+    updatedAt: string;
+    status: 'draft';
+}
 
 export interface ScriptScene {
     id: string;

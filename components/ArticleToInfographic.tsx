@@ -4,16 +4,18 @@
  */
 
 import React, { useState, useRef } from 'react';
+import JSZip from 'jszip';
 import { generateArticleInfographic } from '../services/geminiService';
-import { Citation, ArticleHistoryItem, SocialPost } from '../types';
-import { 
-    Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, ExternalLink, BookOpen, Clock, 
-    Maximize, Copy, Check, Linkedin, Twitter, Instagram, Facebook, Share2, Cloud, AtSign, MessageSquare, 
-    Type, AlignLeft, Zap, Settings, Sliders, Grid3X3, LayoutTemplate, Wand2, RefreshCw, Save, 
-    FolderOpen, Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff, Lock, Unlock, Layers, 
+import { saveContentBundleDraft } from '../services/postsService';
+import { Citation, ArticleHistoryItem, SocialPost, ContentBundleResult } from '../types';
+import {
+    Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, ExternalLink, BookOpen, Clock,
+    Maximize, Copy, Check, Linkedin, Twitter, Instagram, Facebook, Share2, Cloud, AtSign, MessageSquare,
+    Type, AlignLeft, Zap, Settings, Sliders, Grid3X3, LayoutTemplate, Wand2, RefreshCw, Save,
+    FolderOpen, Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff, Lock, Unlock, Layers,
     Image as ImageIcon, FileText, Hash, TrendingUp, Target, Users, Calendar, Send, Archive,
     Bookmark, Star, Heart, MoreHorizontal, Filter, SortAsc, Search, X, Upload, Paintbrush,
-    Ratio, Monitor, Smartphone, Tablet, PanelLeft, BarChart3, PieChart, Activity
+    Ratio, Monitor, Smartphone, Tablet, PanelLeft, BarChart3, PieChart, Activity, FileArchive
 } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 import ImageViewer from './ImageViewer';
@@ -121,7 +123,12 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
     const [activeTab, setActiveTab] = useState<'create' | 'history' | 'templates'>('create');
     const [historyFilter, setHistoryFilter] = useState('');
     const [showStylePicker, setShowStylePicker] = useState(false);
-    
+
+    // Save/Download State
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
+
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -232,6 +239,145 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
         link.href = `data:image/${format};base64,${imageData}`;
         link.download = `infographic-${Date.now()}.${format}`;
         link.click();
+    };
+
+    // Download all captions as a text file
+    const downloadCaptions = () => {
+        if (generatedPosts.length === 0) return;
+
+        let content = `Content Bundle - Social Media Captions\n`;
+        content += `Generated: ${new Date().toLocaleString()}\n`;
+        content += `Source: ${inputValue}\n`;
+        content += `${'='.repeat(50)}\n\n`;
+
+        generatedPosts.forEach((post, idx) => {
+            content += `[${post.platform}]\n`;
+            content += `${'-'.repeat(30)}\n`;
+            content += `${post.content}\n\n`;
+        });
+
+        if (citations.length > 0) {
+            content += `\n${'='.repeat(50)}\n`;
+            content += `SOURCES:\n`;
+            citations.forEach((cite, idx) => {
+                content += `${idx + 1}. ${cite.title || cite.uri}\n   ${cite.uri}\n`;
+            });
+        }
+
+        const blob = new Blob([content], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `captions-${Date.now()}.txt`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    };
+
+    // Download everything as a ZIP file
+    const downloadBundle = async () => {
+        if (!imageData && generatedPosts.length === 0) return;
+
+        setIsDownloading(true);
+        try {
+            const zip = new JSZip();
+            const timestamp = Date.now();
+            const bundleName = inputMode === 'url'
+                ? (() => { try { return new URL(inputValue).hostname.replace(/\./g, '_'); } catch { return 'bundle'; } })()
+                : 'content_bundle';
+
+            // Add infographic image
+            if (imageData) {
+                const imageBytes = Uint8Array.from(atob(imageData), c => c.charCodeAt(0));
+                zip.file(`${bundleName}_infographic.png`, imageBytes);
+            }
+
+            // Add individual platform captions
+            const captionsFolder = zip.folder('captions');
+            generatedPosts.forEach(post => {
+                const filename = `${post.platform.toLowerCase().replace(/[^a-z0-9]/g, '_')}_caption.txt`;
+                captionsFolder?.file(filename, post.content);
+            });
+
+            // Add all captions combined
+            let allCaptions = `Content Bundle - All Social Media Captions\n`;
+            allCaptions += `Generated: ${new Date().toLocaleString()}\n`;
+            allCaptions += `Source: ${inputValue}\n`;
+            allCaptions += `Style: ${selectedPreset.name}\n`;
+            allCaptions += `Platforms: ${selectedPlatforms.join(', ')}\n`;
+            allCaptions += `${'='.repeat(50)}\n\n`;
+
+            generatedPosts.forEach(post => {
+                allCaptions += `[${post.platform}]\n`;
+                allCaptions += `${'-'.repeat(30)}\n`;
+                allCaptions += `${post.content}\n\n`;
+            });
+
+            if (citations.length > 0) {
+                allCaptions += `\n${'='.repeat(50)}\n`;
+                allCaptions += `SOURCES:\n`;
+                citations.forEach((cite, idx) => {
+                    allCaptions += `${idx + 1}. ${cite.title || cite.uri}\n   ${cite.uri}\n`;
+                });
+            }
+            zip.file('all_captions.txt', allCaptions);
+
+            // Add sources/citations as JSON
+            if (citations.length > 0) {
+                zip.file('sources.json', JSON.stringify(citations, null, 2));
+            }
+
+            // Add bundle metadata
+            const metadata = {
+                generatedAt: new Date().toISOString(),
+                source: inputValue,
+                inputMode: inputMode,
+                style: selectedPreset.name,
+                platforms: selectedPlatforms,
+                language: selectedLanguage,
+                postsCount: generatedPosts.length,
+                citationsCount: citations.length
+            };
+            zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+            // Generate and download ZIP
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(zipBlob);
+            link.download = `${bundleName}_bundle_${timestamp}.zip`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        } catch (err) {
+            console.error('Failed to create ZIP:', err);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    // Save to drafts
+    const handleSaveToDrafts = async () => {
+        if (!imageData && generatedPosts.length === 0) return;
+
+        setIsSaving(true);
+        setSaveSuccess(false);
+        try {
+            const bundle: ContentBundleResult = {
+                imageData,
+                citations,
+                socialPosts: generatedPosts,
+                sourceInput: inputValue,
+                inputMode,
+                style: selectedPreset.name,
+                platforms: selectedPlatforms,
+                language: selectedLanguage
+            };
+
+            await saveContentBundleDraft(bundle);
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000);
+        } catch (err: any) {
+            setError(err.message || 'Failed to save draft');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const filteredHistory = history.filter(item => 
@@ -768,6 +914,76 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Action Bar - Save & Download */}
+                                <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900/80 to-slate-800/50 border border-white/10">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                            <Archive className="w-5 h-5 text-emerald-400" />
+                                            Save & Export
+                                        </h3>
+                                        {saveSuccess && (
+                                            <span className="flex items-center gap-2 text-emerald-400 text-sm animate-in fade-in">
+                                                <Check className="w-4 h-4" />
+                                                Saved to drafts!
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-3">
+                                        {/* Save to Drafts */}
+                                        <button
+                                            onClick={handleSaveToDrafts}
+                                            disabled={isSaving || (!imageData && generatedPosts.length === 0)}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isSaving ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Saving...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="w-4 h-4" />
+                                                    Save to Drafts
+                                                </>
+                                            )}
+                                        </button>
+
+                                        {/* Download Bundle (ZIP) */}
+                                        <button
+                                            onClick={downloadBundle}
+                                            disabled={isDownloading || (!imageData && generatedPosts.length === 0)}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isDownloading ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Creating ZIP...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <FileArchive className="w-4 h-4" />
+                                                    Download All (ZIP)
+                                                </>
+                                            )}
+                                        </button>
+
+                                        {/* Download Captions Only */}
+                                        <button
+                                            onClick={downloadCaptions}
+                                            disabled={generatedPosts.length === 0}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                            Download Captions
+                                        </button>
+                                    </div>
+
+                                    <p className="text-xs text-slate-500 mt-3">
+                                        ZIP includes: infographic image, individual platform captions, combined captions, sources, and metadata
+                                    </p>
+                                </div>
                             </div>
                         )}
 

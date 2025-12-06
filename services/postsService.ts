@@ -5,7 +5,7 @@
  */
 
 import { supabase } from './supabaseClient';
-import { BlogPostResult, DraftPost, ScheduledPost, PublishedPost } from '../types';
+import { BlogPostResult, DraftPost, ScheduledPost, PublishedPost, ContentBundleResult, ContentBundleDraft } from '../types';
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -467,4 +467,152 @@ export function getRelativeTime(dateString: string): string {
 
 export function isPostDue(scheduledDate: string): boolean {
     return new Date(scheduledDate) <= new Date();
+}
+
+// ==================== CONTENT BUNDLE DRAFT OPERATIONS ====================
+
+export async function fetchContentBundleDrafts(): Promise<ContentBundleDraft[]> {
+    const { data, error } = await supabase
+        .from('content_bundle_drafts')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    return (data || []).map(row => ({
+        id: row.id,
+        title: row.title,
+        imageData: row.image_data,
+        citations: row.citations || [],
+        socialPosts: row.social_posts || [],
+        sourceInput: row.source_input,
+        inputMode: row.input_mode,
+        style: row.style,
+        platforms: row.platforms || [],
+        language: row.language,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        status: 'draft' as const
+    }));
+}
+
+export async function fetchContentBundleDraft(id: string): Promise<ContentBundleDraft | null> {
+    const { data, error } = await supabase
+        .from('content_bundle_drafts')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        throw new Error(error.message);
+    }
+
+    return {
+        id: data.id,
+        title: data.title,
+        imageData: data.image_data,
+        citations: data.citations || [],
+        socialPosts: data.social_posts || [],
+        sourceInput: data.source_input,
+        inputMode: data.input_mode,
+        style: data.style,
+        platforms: data.platforms || [],
+        language: data.language,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        status: 'draft'
+    };
+}
+
+export async function saveContentBundleDraft(bundle: ContentBundleResult, title?: string): Promise<ContentBundleDraft> {
+    const id = generateId('bundle');
+    const now = new Date().toISOString();
+
+    // Generate title if not provided
+    const generatedTitle = title || (bundle.inputMode === 'url'
+        ? (() => { try { return new URL(bundle.sourceInput).hostname; } catch { return 'Content Bundle'; } })()
+        : bundle.sourceInput.length > 50
+            ? bundle.sourceInput.substring(0, 50) + '...'
+            : bundle.sourceInput || 'Content Bundle');
+
+    const { data, error } = await supabase
+        .from('content_bundle_drafts')
+        .insert({
+            id,
+            title: generatedTitle,
+            image_data: bundle.imageData,
+            citations: bundle.citations,
+            social_posts: bundle.socialPosts,
+            source_input: bundle.sourceInput,
+            input_mode: bundle.inputMode,
+            style: bundle.style,
+            platforms: bundle.platforms,
+            language: bundle.language,
+            created_at: now,
+            updated_at: now
+        })
+        .select()
+        .single();
+
+    if (error) throw new Error(error.message);
+
+    return {
+        ...bundle,
+        id: data.id,
+        title: data.title,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        status: 'draft'
+    };
+}
+
+export async function updateContentBundleDraft(id: string, updates: Partial<ContentBundleResult> & { title?: string }): Promise<ContentBundleDraft> {
+    const updateData: Record<string, unknown> = {
+        updated_at: new Date().toISOString()
+    };
+
+    if (updates.title) updateData.title = updates.title;
+    if (updates.imageData !== undefined) updateData.image_data = updates.imageData;
+    if (updates.citations) updateData.citations = updates.citations;
+    if (updates.socialPosts) updateData.social_posts = updates.socialPosts;
+    if (updates.sourceInput) updateData.source_input = updates.sourceInput;
+    if (updates.inputMode) updateData.input_mode = updates.inputMode;
+    if (updates.style) updateData.style = updates.style;
+    if (updates.platforms) updateData.platforms = updates.platforms;
+    if (updates.language) updateData.language = updates.language;
+
+    const { data, error } = await supabase
+        .from('content_bundle_drafts')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw new Error(error.message);
+
+    return {
+        id: data.id,
+        title: data.title,
+        imageData: data.image_data,
+        citations: data.citations || [],
+        socialPosts: data.social_posts || [],
+        sourceInput: data.source_input,
+        inputMode: data.input_mode,
+        style: data.style,
+        platforms: data.platforms || [],
+        language: data.language,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        status: 'draft'
+    };
+}
+
+export async function deleteContentBundleDraft(id: string): Promise<void> {
+    const { error } = await supabase
+        .from('content_bundle_drafts')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw new Error(error.message);
 }
