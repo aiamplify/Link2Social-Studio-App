@@ -22,10 +22,10 @@ const TWITTER_CREDENTIALS = {
 // LinkedIn API Credentials - OAuth 2.0
 // Get these from: https://www.linkedin.com/developers/apps
 const LINKEDIN_CREDENTIALS = {
-    clientId: '',            // Application Client ID
-    clientSecret: '',        // Application Client Secret
-    accessToken: '',         // User's Access Token (after OAuth flow)
-    personUrn: '',           // Your LinkedIn Person URN (urn:li:person:XXXXXXXX)
+    clientId: '78oabx8n7pnabq',
+    clientSecret: 'WPL_AP1.rWM81mMI5QUstFAu.YPQo6A==',
+    accessToken: 'AQU6GxpezWX9MdtSKzNp2OoB7wLv7H2__9z6N7b00cF-OEP36g3IPfINNSiswEbhBrmA034TNW4utOizB9tdF_gOEPaXP1v4i5h5aPjFL4YKSlgi5qtvB-urHO2H8kOFXKfhsk0oMw_QF5996Y7o1KtA8zp8DfsyBaIL3VMUUcfK8V9ERxl087URHyMwYO-Lif_0UR382jL9ImiGSojlskbX5Pbb4_URc3I1725FYcSmZy8pjrdb7jul6nctMzO26fw5SorrgAQ1LMKnsxq0m3X11PDD7LgPQ6gWO38_3ifdKQbIcuj51XL6Fd4_wGj5QPELrUjlea0tuDG3UEkv9XuSX1G1hQ',
+    personUrn: 'urn:li:person:-YApe9-tqr',
 };
 
 // Instagram API Credentials - Instagram Graph API (via Facebook)
