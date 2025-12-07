@@ -7,10 +7,11 @@ import React, { useState, useRef } from 'react';
 import JSZip from 'jszip';
 import { generateArticleInfographic } from '../services/geminiService';
 import { saveContentBundleDraft } from '../services/postsService';
+import { postToTwitter, postToLinkedIn, postToInstagram, PostResult } from '../services/socialMediaService';
 import { Citation, ArticleHistoryItem, SocialPost, ContentBundleResult } from '../types';
 import {
     Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, ExternalLink, BookOpen, Clock,
-    Maximize, Copy, Check, Linkedin, Twitter, Instagram, Facebook, Share2, Cloud, AtSign, MessageSquare,
+    Maximize, Copy, Check, Linkedin, Twitter, Instagram, Share2, MessageSquare,
     Type, AlignLeft, Zap, Settings, Sliders, Grid3X3, LayoutTemplate, Wand2, RefreshCw, Save,
     FolderOpen, Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff, Lock, Unlock, Layers,
     Image as ImageIcon, FileText, Hash, TrendingUp, Target, Users, Calendar, Send, Archive,
@@ -37,15 +38,11 @@ const STYLE_PRESETS = [
     { id: 'custom', name: "Custom Style", description: "Define your own style", colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef'] },
 ];
 
-// Platform configurations with optimal sizes
+// Platform configurations - Twitter, LinkedIn, Instagram only
 const PLATFORMS = [
-    { id: 'LinkedIn', label: 'LinkedIn', icon: Linkedin, charLimit: 3000, hashtagLimit: 5, bestTime: '9am-12pm' },
     { id: 'Twitter', label: 'X / Twitter', icon: Twitter, charLimit: 280, hashtagLimit: 3, bestTime: '12pm-3pm' },
+    { id: 'LinkedIn', label: 'LinkedIn', icon: Linkedin, charLimit: 3000, hashtagLimit: 5, bestTime: '9am-12pm' },
     { id: 'Instagram', label: 'Instagram', icon: Instagram, charLimit: 2200, hashtagLimit: 30, bestTime: '11am-1pm' },
-    { id: 'Facebook', label: 'Facebook', icon: Facebook, charLimit: 63206, hashtagLimit: 10, bestTime: '1pm-4pm' },
-    { id: 'BlueSky', label: 'BlueSky', icon: Cloud, charLimit: 300, hashtagLimit: 5, bestTime: '10am-2pm' },
-    { id: 'Threads', label: 'Threads', icon: AtSign, charLimit: 500, hashtagLimit: 5, bestTime: '7pm-9pm' },
-    { id: 'Reddit', label: 'Reddit', icon: MessageSquare, charLimit: 40000, hashtagLimit: 0, bestTime: '6am-8am' }
 ];
 
 const LANGUAGES = [
@@ -94,7 +91,7 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
     const [selectedPreset, setSelectedPreset] = useState(STYLE_PRESETS[0]);
     const [customStyle, setCustomStyle] = useState('');
     const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0].value);
-    const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['LinkedIn', 'Twitter']);
+    const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['Twitter', 'LinkedIn', 'Instagram']);
     const [outputFormat, setOutputFormat] = useState(OUTPUT_FORMATS[2]); // Default landscape
     const [selectedTone, setSelectedTone] = useState(TONE_OPTIONS[0]);
     
@@ -128,6 +125,11 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
     const [isSaving, setIsSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    // Posting State
+    const [isPosting, setIsPosting] = useState(false);
+    const [postingPlatform, setPostingPlatform] = useState<string | null>(null);
+    const [postResults, setPostResults] = useState<{platform: string, success: boolean, message: string}[]>([]);
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -377,6 +379,61 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
             setError(err.message || 'Failed to save draft');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    // Post to individual platform
+    const handlePostToPlatform = async (platform: string, content: string) => {
+        if (!imageData) return;
+
+        setIsPosting(true);
+        setPostingPlatform(platform);
+
+        try {
+            // Pass the infographic image
+            const images = [imageData];
+
+            let postResult: PostResult;
+
+            switch (platform.toLowerCase()) {
+                case 'x / twitter':
+                case 'twitter':
+                    postResult = await postToTwitter(content, images);
+                    break;
+                case 'linkedin':
+                    postResult = await postToLinkedIn(content, images);
+                    break;
+                case 'instagram':
+                    postResult = await postToInstagram(content, images);
+                    break;
+                default:
+                    throw new Error(`Unsupported platform: ${platform}`);
+            }
+
+            setPostResults(prev => [...prev, {
+                platform,
+                success: postResult.success,
+                message: postResult.message
+            }]);
+        } catch (err: any) {
+            setPostResults(prev => [...prev, {
+                platform,
+                success: false,
+                message: err.message || 'Failed to post'
+            }]);
+        } finally {
+            setIsPosting(false);
+            setPostingPlatform(null);
+        }
+    };
+
+    // Post to all platforms
+    const handlePostToAllPlatforms = async () => {
+        if (generatedPosts.length === 0) return;
+
+        setPostResults([]); // Clear previous results
+        for (const post of generatedPosts) {
+            await handlePostToPlatform(post.platform, post.content);
         }
     };
 
@@ -842,15 +899,55 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                 {/* Social Posts */}
                                 {generatedPosts.length > 0 && (
                                     <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5">
-                                        <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                                            <Share2 className="w-5 h-5 text-emerald-400" />
-                                            Social Media Posts
-                                        </h3>
-                                        
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                                <Share2 className="w-5 h-5 text-emerald-400" />
+                                                Social Media Posts
+                                            </h3>
+                                            <button
+                                                onClick={handlePostToAllPlatforms}
+                                                disabled={isPosting || !imageData}
+                                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                            >
+                                                {isPosting ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                        Posting...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Send className="w-4 h-4" />
+                                                        Post to All Platforms
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+
+                                        {/* Post Results */}
+                                        {postResults.length > 0 && (
+                                            <div className="mb-4 space-y-2">
+                                                {postResults.map((result, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className={`p-3 rounded-lg flex items-center gap-2 text-sm ${
+                                                            result.success
+                                                                ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                                                                : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                                                        }`}
+                                                    >
+                                                        {result.success ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                                        <span className="font-medium">{result.platform}:</span>
+                                                        <span>{result.message}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         <div className="space-y-4">
                                             {generatedPosts.map((post, idx) => {
                                                 const platform = PLATFORMS.find(p => p.id === post.platform);
                                                 const Icon = platform?.icon || MessageSquare;
+                                                const isCurrentlyPosting = isPosting && postingPlatform === post.platform;
                                                 return (
                                                     <div key={idx} className="p-4 rounded-xl bg-slate-950/50 border border-white/5 hover:border-emerald-500/30 transition-colors">
                                                         <div className="flex items-center justify-between mb-3">
@@ -863,22 +960,41 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <button
-                                                                onClick={() => copyToClipboard(post.content, idx)}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors text-xs"
-                                                            >
-                                                                {copiedPostIndex === idx ? (
-                                                                    <>
-                                                                        <Check className="w-3 h-3 text-emerald-400" />
-                                                                        Copied!
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <Copy className="w-3 h-3" />
-                                                                        Copy
-                                                                    </>
-                                                                )}
-                                                            </button>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={() => copyToClipboard(post.content, idx)}
+                                                                    className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors text-xs"
+                                                                >
+                                                                    {copiedPostIndex === idx ? (
+                                                                        <>
+                                                                            <Check className="w-3 h-3 text-emerald-400" />
+                                                                            Copied!
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Copy className="w-3 h-3" />
+                                                                            Copy
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handlePostToPlatform(post.platform, post.content)}
+                                                                    disabled={isPosting || !imageData}
+                                                                    className="flex items-center gap-1 px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                                                                >
+                                                                    {isCurrentlyPosting ? (
+                                                                        <>
+                                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                                            Posting...
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Send className="w-3 h-3" />
+                                                                            Post
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                         <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
                                                             {post.content}
