@@ -12,11 +12,11 @@
 // Twitter (X) API Credentials - OAuth 1.0a User Context
 // Get these from: https://developer.twitter.com/en/portal/dashboard
 const TWITTER_CREDENTIALS = {
-    apiKey: '',              // Also called "Consumer Key" or "API Key"
-    apiKeySecret: '',        // Also called "Consumer Secret" or "API Key Secret"
-    accessToken: '',         // User's Access Token
-    accessTokenSecret: '',   // User's Access Token Secret
-    bearerToken: '',         // Bearer Token (for app-only auth)
+    apiKey: 'ad9Nxpyud2BBcxs6JKl6DjMWd',
+    apiKeySecret: 'kOprhIQtyjAcr3sxrNzuZHP1F3Bdr0D1toCAk894GhI4NX1Bm6',
+    accessToken: '1759762781132267520-WavUIq5G7oGcPWUTaWNdmFXpL4eY5P',
+    accessTokenSecret: 'L3yBPHU63pTtJpCPIJMdxIQub4amkgjXxM53WAOonztN0',
+    bearerToken: 'AAAAAAAAAAAAAAAAAAAAAAN45wEAAAAA%2FWs6oR5e0s2qeWQZL6dtzPbsyf0%3DTRwwUNFrs1ST4FCTx2SOe2Idl32HLXkW8KaXMP1UmJWvst5STf',
 };
 
 // LinkedIn API Credentials - OAuth 2.0
