@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import https from 'https';
 
-// Instagram credentials - in production, use environment variables
+// Instagram credentials
 const INSTAGRAM_CREDENTIALS = {
     accessToken: 'EAAoLa0r1ya8BQO3vVOmT4wM8XEWYf22M4zFcOvMrDisUv63Ap3XDz4IeWdUwUBAMICJPs5ZADf7ZASJiq6hFV12sNtl3ADIHFqlA01ZCNnp457sPuvxKb0pZAdJYVl6CV2ZCaBkImkZCCPXdR82nFH0GdUbRezgBZB5bZBJDCf1RtqZAUzXItesR0RyNeru0L0zZBXhesZD',
     instagramAccountId: '17841460156952672',
@@ -9,31 +10,106 @@ const INSTAGRAM_CREDENTIALS = {
 // ImgBB API for hosting images (free tier)
 const IMGBB_API_KEY = '74b6c0a4993129181bf3413ee86029e2';
 
+/**
+ * Make HTTPS request (consistent with other API routes)
+ */
+function makeRequest(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: string
+): Promise<{ statusCode: number; data: string }> {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+
+        const finalHeaders = { ...headers };
+        if (body) {
+            finalHeaders['Content-Length'] = Buffer.byteLength(body, 'utf8').toString();
+        }
+
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method,
+            headers: finalHeaders,
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve({ statusCode: res.statusCode || 500, data }));
+        });
+
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
+/**
+ * Upload image to ImgBB and return the URL
+ */
 async function uploadToImgBB(base64Image: string): Promise<string | null> {
     if (!IMGBB_API_KEY) {
         return null;
     }
 
     try {
-        const formData = new URLSearchParams();
-        formData.append('image', base64Image);
+        // Remove data URL prefix if present
+        const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
 
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-            method: 'POST',
-            body: formData,
-        });
+        const body = `key=${IMGBB_API_KEY}&image=${encodeURIComponent(base64Data)}`;
 
-        if (!response.ok) {
-            console.error('ImgBB upload failed');
+        const response = await makeRequest(
+            'https://api.imgbb.com/1/upload',
+            'POST',
+            {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body
+        );
+
+        console.log('ImgBB response:', response.statusCode, response.data.substring(0, 200));
+
+        if (response.statusCode !== 200) {
+            console.error('ImgBB upload failed:', response.data);
             return null;
         }
 
-        const data = await response.json();
-        return data.data?.url || null;
+        const data = JSON.parse(response.data);
+        // Use the display_url which is more reliable for Instagram
+        const imageUrl = data.data?.display_url || data.data?.url;
+        console.log('ImgBB image URL:', imageUrl);
+        return imageUrl || null;
     } catch (error) {
         console.error('ImgBB upload error:', error);
         return null;
     }
+}
+
+/**
+ * Sleep helper
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Check media container status
+ */
+async function checkContainerStatus(containerId: string, accessToken: string): Promise<string> {
+    const url = `https://graph.facebook.com/v18.0/${containerId}?fields=status_code,status&access_token=${accessToken}`;
+
+    const response = await makeRequest(url, 'GET', {});
+
+    if (response.statusCode !== 200) {
+        console.error('Status check failed:', response.data);
+        return 'ERROR';
+    }
+
+    const data = JSON.parse(response.data);
+    console.log('Container status:', data);
+    return data.status_code || 'UNKNOWN';
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -51,10 +127,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const { caption, images } = req.body;
+        const { text, caption, images } = req.body;
         const { accessToken, instagramAccountId } = INSTAGRAM_CREDENTIALS;
 
-        if (!caption) {
+        // Support both 'text' and 'caption' for flexibility
+        const postCaption = caption || text;
+
+        if (!postCaption) {
             return res.status(400).json({ error: 'Caption is required' });
         }
 
@@ -65,70 +144,103 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
-        // Try to upload image to ImgBB
-        let imageUrl: string | null = null;
-        if (IMGBB_API_KEY) {
-            imageUrl = await uploadToImgBB(images[0]);
-        }
+        console.log('Starting Instagram post, caption length:', postCaption.length);
+
+        // Upload image to ImgBB
+        const imageUrl = await uploadToImgBB(images[0]);
 
         if (!imageUrl) {
             return res.status(400).json({
                 success: false,
-                message: 'Instagram requires images hosted on a public URL. Please add an ImgBB API key to api/post-instagram.ts (get one free at https://api.imgbb.com/)',
+                message: 'Failed to upload image to ImgBB. Please try again.',
             });
         }
 
+        console.log('Image uploaded to ImgBB:', imageUrl);
+
+        // Wait a moment for the image to be fully available
+        await sleep(2000);
+
         // Step 1: Create media container
-        const createMediaResponse = await fetch(
+        const createBody = JSON.stringify({
+            image_url: imageUrl,
+            caption: postCaption,
+            access_token: accessToken,
+        });
+
+        console.log('Creating Instagram media container...');
+
+        const createResponse = await makeRequest(
             `https://graph.facebook.com/v18.0/${instagramAccountId}/media`,
+            'POST',
             {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    image_url: imageUrl,
-                    caption: caption,
-                    access_token: accessToken,
-                }),
-            }
+                'Content-Type': 'application/json',
+            },
+            createBody
         );
 
-        if (!createMediaResponse.ok) {
-            const errorData = await createMediaResponse.json();
-            return res.status(createMediaResponse.status).json({
+        console.log('Create container response:', createResponse.statusCode, createResponse.data);
+
+        if (createResponse.statusCode !== 200) {
+            const errorData = JSON.parse(createResponse.data);
+            return res.status(createResponse.statusCode).json({
                 success: false,
                 message: errorData.error?.message || 'Failed to create Instagram media container',
             });
         }
 
-        const mediaData = await createMediaResponse.json();
+        const mediaData = JSON.parse(createResponse.data);
         const containerId = mediaData.id;
 
-        // Step 2: Publish the container
-        const publishResponse = await fetch(
+        console.log('Container created:', containerId);
+
+        // Step 2: Wait for container to be ready (poll status)
+        let status = 'IN_PROGRESS';
+        let attempts = 0;
+        const maxAttempts = 30; // Max 30 seconds
+
+        while (status === 'IN_PROGRESS' && attempts < maxAttempts) {
+            await sleep(1000);
+            status = await checkContainerStatus(containerId, accessToken);
+            attempts++;
+            console.log(`Status check ${attempts}: ${status}`);
+        }
+
+        if (status !== 'FINISHED') {
+            return res.status(400).json({
+                success: false,
+                message: `Media processing failed with status: ${status}. This may be due to image format or size issues.`,
+            });
+        }
+
+        // Step 3: Publish the container
+        const publishBody = JSON.stringify({
+            creation_id: containerId,
+            access_token: accessToken,
+        });
+
+        console.log('Publishing container...');
+
+        const publishResponse = await makeRequest(
             `https://graph.facebook.com/v18.0/${instagramAccountId}/media_publish`,
+            'POST',
             {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    creation_id: containerId,
-                    access_token: accessToken,
-                }),
-            }
+                'Content-Type': 'application/json',
+            },
+            publishBody
         );
 
-        if (!publishResponse.ok) {
-            const errorData = await publishResponse.json();
-            return res.status(publishResponse.status).json({
+        console.log('Publish response:', publishResponse.statusCode, publishResponse.data);
+
+        if (publishResponse.statusCode !== 200) {
+            const errorData = JSON.parse(publishResponse.data);
+            return res.status(publishResponse.statusCode).json({
                 success: false,
                 message: errorData.error?.message || 'Failed to publish Instagram post',
             });
         }
 
-        const result = await publishResponse.json();
+        const result = JSON.parse(publishResponse.data);
         return res.status(200).json({
             success: true,
             message: 'Successfully posted to Instagram!',
