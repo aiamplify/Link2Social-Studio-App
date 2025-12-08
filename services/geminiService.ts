@@ -5,6 +5,7 @@
 
 import { GoogleGenAI, Type, Modality, GenerateContentResponse } from "@google/genai";
 import { RepoFileTree, Citation, SocialPost, CarouselResult, CarouselSlide, BlogPostResult, BlogVisual } from '../types';
+// SocialPost is now used in generateCarousel for multi-platform captions
 
 // Helper to ensure we always get the freshest key from the environment
 // immediately before a call.
@@ -438,20 +439,21 @@ export async function generateCarousel(
     url: string,
     prompt: string,
     sourceImage: string | null,
-    style: string, 
+    style: string,
     language: string,
+    platforms: string[] = ['LinkedIn', 'X / Twitter', 'Instagram'],
     onProgress: (stage: string) => void
 ): Promise<CarouselResult> {
     const ai = getAiClient();
 
-    // Step 1: Plan the Carousel
+    // Step 1: Plan the Carousel with multi-platform captions
     onProgress('PLANNING NARRATIVE ARC...');
 
     const parts: any[] = [];
-    
+
     // Add Source Image if provided
     if (sourceImage) {
-         parts.push({
+        parts.push({
             inlineData: {
                 data: sourceImage,
                 mimeType: "image/png" // Assuming standard format from frontend
@@ -467,15 +469,31 @@ export async function generateCarousel(
         contextInstruction += `User Instructions / Specific Context: "${prompt}"\n`;
     }
 
+    // Platform-specific character limits for captions
+    const platformLimits: Record<string, { charLimit: number; hashtagLimit: number }> = {
+        'X / Twitter': { charLimit: 280, hashtagLimit: 3 },
+        'Twitter': { charLimit: 280, hashtagLimit: 3 },
+        'LinkedIn': { charLimit: 3000, hashtagLimit: 5 },
+        'Instagram': { charLimit: 2200, hashtagLimit: 30 },
+    };
+
+    const platformInstructions = platforms.map(p => {
+        const limits = platformLimits[p] || { charLimit: 2000, hashtagLimit: 5 };
+        return `- ${p}: Max ${limits.charLimit} characters, ${limits.hashtagLimit} hashtags`;
+    }).join('\n');
+
     const planPrompt = `
     ${contextInstruction}
-    
-    Create a plan for a 4-slide LinkedIn/Instagram social media carousel.
+
+    Create a plan for a 4-slide social media carousel.
     TARGET LANGUAGE: ${language}.
-    
+    TARGET PLATFORMS: ${platforms.join(', ')}
+
     Return a valid JSON object with the following structure:
     {
-      "caption": "The text for the LinkedIn/Instagram post caption including hashtags.",
+      "captions": [
+        ${platforms.map(p => `{ "platform": "${p}", "content": "Optimized caption for ${p} with appropriate hashtags..." }`).join(',\n        ')}
+      ],
       "slides": [
         {
           "order": 1,
@@ -503,8 +521,16 @@ export async function generateCarousel(
         }
       ]
     }
+
+    CAPTION REQUIREMENTS FOR EACH PLATFORM:
+    ${platformInstructions}
+
+    Each caption should be optimized for its platform:
+    - X / Twitter: Concise, punchy, trending hashtags, compelling hook
+    - LinkedIn: Professional tone, industry insights, thought leadership
+    - Instagram: Visual-first language, emojis allowed, engaging CTA
     `;
-    
+
     parts.push({ text: planPrompt });
 
     let plan: any = {};
@@ -514,14 +540,13 @@ export async function generateCarousel(
             contents: { parts },
             config: {
                 tools: [{ googleSearch: {} }],
-                // Removed responseMimeType to avoid config violation with tools
             }
         }));
-        
+
         let jsonStr = planResponse.text || "{}";
         jsonStr = cleanJsonString(jsonStr);
         plan = JSON.parse(jsonStr);
-        
+
         if (!plan.slides || plan.slides.length === 0) throw new Error("Failed to generate plan");
 
     } catch (e) {
@@ -531,14 +556,14 @@ export async function generateCarousel(
 
     // Step 2: Generate Images for each slide
     onProgress('RENDERING SLIDES (1/4)...');
-    
+
     const slides: CarouselSlide[] = [];
     const totalSlides = plan.slides.length;
-    
+
     // Define style once for consistency
-    const visualStyle = style === 'Corporate' 
+    const visualStyle = style === 'Corporate'
         ? "Modern Corporate Aesthetic. Dark Navy Blue background, white bold Sans-Serif typography, minimal geometric accents. Professional, trusted look."
-        : style === 'Bold' 
+        : style === 'Bold'
         ? "High Contrast Bold Aesthetic. Bright Yellow background with heavy Black typography. Brutalist design elements. Attention grabbing."
         : "Clean Minimalist Aesthetic. White background, lots of negative space, elegant serif typography, soft pastel accents.";
 
@@ -549,17 +574,17 @@ export async function generateCarousel(
 
         const slidePrompt = `
         Create a ${i === 0 ? "Title Slide" : "Content Slide"} for a social media carousel (Aspect Ratio 3:4).
-        
+
         TEXT CONTENT TO INCLUDE IN IMAGE (Must be legible):
         - HEADLINE: "${s.title}"
         - BODY: "${s.content}"
-        
+
         VISUAL STYLE:
         ${visualStyle}
-        
+
         SCENE DESCRIPTION:
         ${s.visual_metaphor}
-        
+
         LANGUAGE: ${language}
         `;
 
@@ -599,9 +624,14 @@ export async function generateCarousel(
         }
     }
 
+    // Extract captions - support both new multi-platform format and legacy single caption
+    const captions: SocialPost[] = plan.captions || [];
+    const legacyCaption = plan.caption || (captions.length > 0 ? captions[0].content : "Check out this new carousel!");
+
     return {
         slides,
-        caption: plan.caption || "Check out this new carousel!"
+        caption: legacyCaption,
+        captions: captions
     };
 }
 

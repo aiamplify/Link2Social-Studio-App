@@ -90,7 +90,8 @@ export interface CarouselSlide {
 
 export interface CarouselResult {
     slides: CarouselSlide[];
-    caption: string;
+    caption: string;                    // Legacy single caption (fallback)
+    captions?: SocialPost[];            // Multi-platform captions
 }
 
 export interface BlogVisual {

@@ -5,7 +5,8 @@
 
 import React, { useState, useRef } from 'react';
 import { generateCarousel } from '../services/geminiService';
-import { CarouselResult } from '../types';
+import { CarouselResult, SocialPost } from '../types';
+import { postToTwitter, postToLinkedIn, postToInstagram, PostResult } from '../services/socialMediaService';
 import { 
     Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, Layout, Copy, Check, 
     ArrowLeft, ArrowRight, Image as ImageIcon, MessageSquare, Upload, X, ChevronDown, ChevronUp,
@@ -18,55 +19,46 @@ import {
 } from 'lucide-react';
 import ImageViewer from './ImageViewer';
 
-// Platform configurations with optimal carousel specs
+// Platform configurations with optimal carousel specs (Twitter, LinkedIn, Instagram only)
 const PLATFORM_CONFIGS = [
-    { 
-        id: 'linkedin', 
-        name: 'LinkedIn', 
-        icon: Linkedin, 
-        color: 'blue',
-        aspectRatio: '1:1',
-        maxSlides: 20,
-        optimalSlides: '5-10',
-        dimensions: '1080x1080',
-        captionLimit: 3000,
-        tips: 'Use professional tone, include industry insights'
-    },
-    { 
-        id: 'instagram', 
-        name: 'Instagram', 
-        icon: Instagram, 
-        color: 'pink',
-        aspectRatio: '1:1',
-        maxSlides: 10,
-        optimalSlides: '5-7',
-        dimensions: '1080x1080',
-        captionLimit: 2200,
-        tips: 'Visual-first, use emojis, strong CTA on last slide'
-    },
-    { 
-        id: 'facebook', 
-        name: 'Facebook', 
-        icon: Facebook, 
-        color: 'blue',
-        aspectRatio: '1:1',
-        maxSlides: 10,
-        optimalSlides: '3-5',
-        dimensions: '1080x1080',
-        captionLimit: 63206,
-        tips: 'Engaging questions, community-focused content'
-    },
-    { 
-        id: 'twitter', 
-        name: 'X / Twitter', 
-        icon: Twitter, 
+    {
+        id: 'twitter',
+        name: 'X / Twitter',
+        icon: Twitter,
         color: 'slate',
         aspectRatio: '16:9',
         maxSlides: 4,
         optimalSlides: '2-4',
         dimensions: '1200x675',
         captionLimit: 280,
+        hashtagLimit: 3,
         tips: 'Concise, punchy text, trending topics'
+    },
+    {
+        id: 'linkedin',
+        name: 'LinkedIn',
+        icon: Linkedin,
+        color: 'blue',
+        aspectRatio: '1:1',
+        maxSlides: 20,
+        optimalSlides: '5-10',
+        dimensions: '1080x1080',
+        captionLimit: 3000,
+        hashtagLimit: 5,
+        tips: 'Use professional tone, include industry insights'
+    },
+    {
+        id: 'instagram',
+        name: 'Instagram',
+        icon: Instagram,
+        color: 'pink',
+        aspectRatio: '1:1',
+        maxSlides: 10,
+        optimalSlides: '5-7',
+        dimensions: '1080x1080',
+        captionLimit: 2200,
+        hashtagLimit: 30,
+        tips: 'Visual-first, use emojis, strong CTA on last slide'
     },
 ];
 
@@ -101,11 +93,20 @@ const ArticleToCarousel: React.FC = () => {
     const [prompt, setPrompt] = useState('');
     const [sourceImage, setSourceImage] = useState<string | null>(null);
     
-    // Platform & Style Configuration
-    const [selectedPlatform, setSelectedPlatform] = useState(PLATFORM_CONFIGS[0]);
+    // Platform & Style Configuration (Multi-platform selection)
+    const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['twitter', 'linkedin', 'instagram']);
     const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0]);
     const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0].value);
     const [slideCount, setSlideCount] = useState(5);
+
+    // Toggle platform selection
+    const togglePlatform = (platformId: string) => {
+        setSelectedPlatforms(prev =>
+            prev.includes(platformId)
+                ? prev.filter(p => p !== platformId)
+                : [...prev, platformId]
+        );
+    };
     
     // Advanced Options
     const [showAdvanced, setShowAdvanced] = useState(false);
@@ -124,9 +125,16 @@ const ArticleToCarousel: React.FC = () => {
     const [loadingStage, setLoadingStage] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<CarouselResult | null>(null);
-    
+    const [generatedCaptions, setGeneratedCaptions] = useState<SocialPost[]>([]);
+
+    // Posting State
+    const [isPosting, setIsPosting] = useState(false);
+    const [postingPlatform, setPostingPlatform] = useState<string | null>(null);
+    const [postResults, setPostResults] = useState<{platform: string, success: boolean, message: string}[]>([]);
+
     // UI State
     const [copiedCaption, setCopiedCaption] = useState(false);
+    const [copiedPostIndex, setCopiedPostIndex] = useState<number | null>(null);
     const [fullScreenImage, setFullScreenImage] = useState<{src: string, alt: string} | null>(null);
     const [activeSlideIndex, setActiveSlideIndex] = useState(0);
     const [viewMode, setViewMode] = useState<'grid' | 'carousel' | 'editor'>('grid');
@@ -159,33 +167,47 @@ const ArticleToCarousel: React.FC = () => {
             setError("Please provide at least a URL, a text prompt, or an image.");
             return;
         }
-        
+
+        if (selectedPlatforms.length === 0) {
+            setError("Please select at least one platform.");
+            return;
+        }
+
         setLoading(true);
         setError(null);
         setResult(null);
         setAbVariants([]);
-        
+        setGeneratedCaptions([]);
+        setPostResults([]);
+
         try {
-            // Generate main carousel
+            // Generate main carousel with multi-platform captions
+            const platformNames = selectedPlatforms.map(id =>
+                PLATFORM_CONFIGS.find(p => p.id === id)?.name || id
+            );
+
             const data = await generateCarousel(
-                urlInput, 
+                urlInput,
                 prompt,
                 sourceImage,
-                selectedStyle.name, 
-                selectedLanguage, 
+                selectedStyle.name,
+                selectedLanguage,
+                platformNames,
                 (stage) => setLoadingStage(stage)
             );
             setResult(data);
-            
+            setGeneratedCaptions(data.captions || []);
+
             // Generate A/B variant if enabled
             if (enableABTesting) {
                 setLoadingStage('GENERATING A/B VARIANT...');
                 const variantData = await generateCarousel(
-                    urlInput, 
+                    urlInput,
                     prompt + " (Alternative version with different visual approach)",
                     sourceImage,
-                    selectedStyle.name, 
-                    selectedLanguage, 
+                    selectedStyle.name,
+                    selectedLanguage,
+                    platformNames,
                     () => {}
                 );
                 setAbVariants([variantData]);
@@ -194,6 +216,69 @@ const ArticleToCarousel: React.FC = () => {
             setError(err.message || "Failed to generate carousel.");
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Copy caption to clipboard
+    const copyCaptionToClipboard = (text: string, index: number) => {
+        navigator.clipboard.writeText(text);
+        setCopiedPostIndex(index);
+        setTimeout(() => setCopiedPostIndex(null), 2000);
+    };
+
+    // Post to individual platform
+    const handlePostToPlatform = async (platform: string, caption: string) => {
+        if (!result || result.slides.length === 0) return;
+
+        setIsPosting(true);
+        setPostingPlatform(platform);
+
+        try {
+            // Get all slide images as base64
+            const images = result.slides
+                .filter(s => s.imageData)
+                .map(s => s.imageData!);
+
+            let postResult: PostResult;
+
+            switch (platform.toLowerCase()) {
+                case 'x / twitter':
+                case 'twitter':
+                    postResult = await postToTwitter(caption, images);
+                    break;
+                case 'linkedin':
+                    postResult = await postToLinkedIn(caption, images);
+                    break;
+                case 'instagram':
+                    postResult = await postToInstagram(caption, images);
+                    break;
+                default:
+                    throw new Error(`Unsupported platform: ${platform}`);
+            }
+
+            setPostResults(prev => [...prev, {
+                platform,
+                success: postResult.success,
+                message: postResult.message
+            }]);
+        } catch (err: any) {
+            setPostResults(prev => [...prev, {
+                platform,
+                success: false,
+                message: err.message || 'Failed to post'
+            }]);
+        } finally {
+            setIsPosting(false);
+            setPostingPlatform(null);
+        }
+    };
+
+    // Post to all selected platforms
+    const handlePostToAllPlatforms = async () => {
+        if (!result || generatedCaptions.length === 0) return;
+
+        for (const caption of generatedCaptions) {
+            await handlePostToPlatform(caption.platform, caption.content);
         }
     };
 
@@ -275,64 +360,71 @@ const ArticleToCarousel: React.FC = () => {
             <div className="grid lg:grid-cols-12 gap-6">
                 {/* Left Column - Configuration */}
                 <div className="lg:col-span-5 space-y-6">
-                    {/* Platform Selection */}
+                    {/* Platform Selection - Multi-Select */}
                     <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                <Share2 className="w-5 h-5 text-sky-400" />
-                                Target Platform
-                            </h3>
-                            <button
-                                onClick={() => setShowPlatformPicker(!showPlatformPicker)}
-                                className="text-xs text-sky-400 hover:text-sky-300"
-                            >
-                                {showPlatformPicker ? 'Hide' : 'Change'}
-                            </button>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Share2 className="w-5 h-5 text-sky-400" />
+                            Target Platforms
+                            <span className="ml-2 px-2 py-0.5 bg-sky-500/20 text-sky-300 text-xs rounded-full">
+                                {selectedPlatforms.length} selected
+                            </span>
+                        </h3>
+
+                        {/* Multi-Select Platform Grid */}
+                        <div className="space-y-2">
+                            {PLATFORM_CONFIGS.map(platform => {
+                                const Icon = platform.icon;
+                                const isSelected = selectedPlatforms.includes(platform.id);
+                                return (
+                                    <button
+                                        key={platform.id}
+                                        onClick={() => togglePlatform(platform.id)}
+                                        className={`w-full p-4 rounded-xl text-left transition-all flex items-center gap-4 border ${
+                                            isSelected
+                                                ? 'bg-sky-500/10 border-sky-500/30'
+                                                : 'bg-slate-950/50 border-white/5 hover:border-white/10'
+                                        }`}
+                                    >
+                                        {/* Checkbox */}
+                                        <div className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-all ${
+                                            isSelected
+                                                ? 'bg-sky-500 border-sky-500'
+                                                : 'border-slate-600'
+                                        }`}>
+                                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                                        </div>
+
+                                        {/* Icon */}
+                                        <div className={`p-2 rounded-lg ${isSelected ? 'bg-sky-500/20' : 'bg-slate-800'}`}>
+                                            <Icon className={`w-5 h-5 ${isSelected ? 'text-sky-400' : 'text-slate-400'}`} />
+                                        </div>
+
+                                        {/* Info */}
+                                        <div className="flex-1">
+                                            <div className={`font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}>
+                                                {platform.name}
+                                            </div>
+                                            <div className="text-xs text-slate-500">
+                                                {platform.aspectRatio} • Max {platform.maxSlides} slides • {platform.captionLimit} chars
+                                            </div>
+                                        </div>
+
+                                        {/* Tips (show when selected) */}
+                                        {isSelected && (
+                                            <div className="hidden lg:block text-xs text-sky-300 max-w-[150px] text-right">
+                                                💡 {platform.tips}
+                                            </div>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
 
-                        {/* Selected Platform Preview */}
-                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/10">
-                            <div className="flex items-center gap-4">
-                                <div className={`p-3 rounded-xl bg-${selectedPlatform.color}-500/20`}>
-                                    <selectedPlatform.icon className={`w-6 h-6 text-${selectedPlatform.color}-400`} />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-white font-bold">{selectedPlatform.name}</div>
-                                    <div className="text-xs text-slate-500">
-                                        {selectedPlatform.aspectRatio} • Max {selectedPlatform.maxSlides} slides • {selectedPlatform.dimensions}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="mt-3 p-2 rounded-lg bg-sky-500/10 border border-sky-500/20">
-                                <p className="text-xs text-sky-300">💡 {selectedPlatform.tips}</p>
-                            </div>
-                        </div>
-
-                        {/* Platform Grid */}
-                        {showPlatformPicker && (
-                            <div className="grid grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-2">
-                                {PLATFORM_CONFIGS.map(platform => {
-                                    const Icon = platform.icon;
-                                    return (
-                                        <button
-                                            key={platform.id}
-                                            onClick={() => {
-                                                setSelectedPlatform(platform);
-                                                setShowPlatformPicker(false);
-                                            }}
-                                            className={`p-4 rounded-xl text-left transition-all ${
-                                                selectedPlatform.id === platform.id
-                                                    ? 'bg-sky-500/20 border border-sky-500/30'
-                                                    : 'bg-slate-950/50 border border-white/5 hover:border-white/10'
-                                            }`}
-                                        >
-                                            <Icon className={`w-5 h-5 mb-2 text-${platform.color}-400`} />
-                                            <div className="text-sm text-white font-medium">{platform.name}</div>
-                                            <div className="text-[10px] text-slate-500">{platform.optimalSlides} slides optimal</div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                        {selectedPlatforms.length === 0 && (
+                            <p className="text-xs text-amber-400 flex items-center gap-2">
+                                <AlertCircle className="w-3 h-3" />
+                                Please select at least one platform
+                            </p>
                         )}
                     </div>
 
@@ -572,7 +664,7 @@ const ArticleToCarousel: React.FC = () => {
                     {/* Generate Button */}
                     <button
                         onClick={handleGenerate}
-                        disabled={loading || (!urlInput.trim() && !prompt.trim() && !sourceImage)}
+                        disabled={loading || selectedPlatforms.length === 0 || (!urlInput.trim() && !prompt.trim() && !sourceImage)}
                         className="w-full py-4 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-400 hover:to-blue-400 text-white rounded-2xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-sky-500/25 hover:shadow-sky-500/40"
                     >
                         {loading ? (
@@ -584,6 +676,9 @@ const ArticleToCarousel: React.FC = () => {
                             <>
                                 <Sparkles className="w-5 h-5" />
                                 Generate Carousel
+                                <span className="text-xs opacity-75">
+                                    ({selectedPlatforms.length} platform{selectedPlatforms.length !== 1 ? 's' : ''})
+                                </span>
                                 {enableABTesting && <span className="text-xs opacity-75">(+ A/B Variant)</span>}
                             </>
                         )}
@@ -606,7 +701,9 @@ const ArticleToCarousel: React.FC = () => {
                                 <div className="absolute inset-0 border-4 border-t-sky-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
                             </div>
                             <p className="text-sky-400 font-mono text-sm animate-pulse uppercase tracking-wider">{loadingStage}</p>
-                            <p className="text-slate-500 text-xs mt-2">Creating {slideCount} slides for {selectedPlatform.name}</p>
+                            <p className="text-slate-500 text-xs mt-2">
+                                Creating carousel for {selectedPlatforms.length} platform{selectedPlatforms.length !== 1 ? 's' : ''}
+                            </p>
                         </div>
                     )}
 
@@ -797,30 +894,131 @@ const ArticleToCarousel: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Caption Section */}
+                            {/* Multi-Platform Captions Section */}
                             <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                         <MessageSquare className="w-5 h-5 text-sky-400" />
-                                        Social Caption
+                                        Social Media Captions
                                     </h3>
-                                    <button 
-                                        onClick={copyCaption}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors text-sm"
-                                    >
-                                        {copiedCaption ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                                        {copiedCaption ? "Copied!" : "Copy"}
-                                    </button>
+                                    {generatedCaptions.length > 0 && (
+                                        <button
+                                            onClick={handlePostToAllPlatforms}
+                                            disabled={isPosting}
+                                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-400 hover:to-blue-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                        >
+                                            {isPosting ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Posting...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Send className="w-4 h-4" />
+                                                    Post to All Platforms
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
-                                    <p className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">
-                                        {result.caption}
-                                    </p>
-                                </div>
-                                <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
-                                    <span>{result.caption.length} / {selectedPlatform.captionLimit} characters</span>
-                                    <span>Optimized for {selectedPlatform.name}</span>
-                                </div>
+
+                                {/* Post Results */}
+                                {postResults.length > 0 && (
+                                    <div className="mb-4 space-y-2">
+                                        {postResults.map((result, idx) => (
+                                            <div
+                                                key={idx}
+                                                className={`p-3 rounded-lg flex items-center gap-2 text-sm ${
+                                                    result.success
+                                                        ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                                                        : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                                                }`}
+                                            >
+                                                {result.success ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                                <span className="font-medium">{result.platform}:</span>
+                                                <span>{result.message}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Generated Captions per Platform */}
+                                {generatedCaptions.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {generatedCaptions.map((post, idx) => {
+                                            const platformConfig = PLATFORM_CONFIGS.find(
+                                                p => p.name.toLowerCase().includes(post.platform.toLowerCase()) ||
+                                                    post.platform.toLowerCase().includes(p.name.toLowerCase())
+                                            );
+                                            const Icon = platformConfig?.icon || MessageSquare;
+                                            const isCurrentlyPosting = isPosting && postingPlatform === post.platform;
+
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    className="p-4 rounded-xl bg-slate-950/50 border border-white/5 hover:border-sky-500/30 transition-colors"
+                                                >
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <Icon className="w-4 h-4 text-sky-400" />
+                                                            <span className="text-sm font-bold text-white">{post.platform}</span>
+                                                            {platformConfig && (
+                                                                <span className="text-[10px] text-slate-500">
+                                                                    {post.content.length}/{platformConfig.captionLimit} chars
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => copyCaptionToClipboard(post.content, idx)}
+                                                                className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors text-xs"
+                                                            >
+                                                                {copiedPostIndex === idx ? (
+                                                                    <>
+                                                                        <Check className="w-3 h-3 text-green-400" />
+                                                                        Copied!
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Copy className="w-3 h-3" />
+                                                                        Copy
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handlePostToPlatform(post.platform, post.content)}
+                                                                disabled={isPosting}
+                                                                className="flex items-center gap-1 px-3 py-1 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                                                            >
+                                                                {isCurrentlyPosting ? (
+                                                                    <>
+                                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                                        Posting...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Send className="w-3 h-3" />
+                                                                        Post
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                                        {post.content}
+                                                    </p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : result?.caption && (
+                                    /* Fallback for single caption */
+                                    <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                        <p className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">
+                                            {result.caption}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             {/* A/B Variants */}
