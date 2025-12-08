@@ -30,8 +30,9 @@ const LINKEDIN_CREDENTIALS = {
 
 // Instagram API Credentials - Instagram Graph API (via Facebook)
 // Get these from: https://developers.facebook.com/apps
+// Long-lived Page Access Token - expires ~60 days (early Feb 2026)
 const INSTAGRAM_CREDENTIALS = {
-    accessToken: 'EAAoLa0r1ya8BQATZB02rbV8NjfZBIewIoy6LM9hLEaFuqRVLls3oaiZBeR2oFYplCwItGzdLRo8d1g0phvPD54zWTMbUdZCWfuk6G8xZCGINmTo6W1mOlMmoJdbtwLLBTaSg9fqUkHvCDcHI3YIWYy3MFdtyDZBbLu24PXZAaserKrTSeDlkQhl6wi3QrPsAnWFR432xwRebWrydWyXmZBmsfVO3Xbg4735Y8y9GgQZDZD',
+    accessToken: 'EAAoLa0r1ya8BQO3vVOmT4wM8XEWYf22M4zFcOvMrDisUv63Ap3XDz4IeWdUwUBAMICJPs5ZADf7ZASJiq6hFV12sNtl3ADIHFqlA01ZCNnp457sPuvxKb0pZAdJYVl6CV2ZCaBkImkZCCPXdR82nFH0GdUbRezgBZB5bZBJDCf1RtqZAUzXItesR0RyNeru0L0zZBXhesZD',
     instagramAccountId: '17841460156952672',
     facebookPageId: '100224776504039',
 };
