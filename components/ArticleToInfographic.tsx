@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import { generateArticleInfographic } from '../services/geminiService';
 import { saveContentBundleDraft } from '../services/postsService';
 import { postToTwitter, postToLinkedIn, postToInstagram, PostResult } from '../services/socialMediaService';
+import { exportToGoogleSheets, GoogleSheetsExportResult } from '../services/googleSheetsService';
 import { Citation, ArticleHistoryItem, SocialPost, ContentBundleResult } from '../types';
 import {
     Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, ExternalLink, BookOpen, Clock,
@@ -16,7 +17,8 @@ import {
     FolderOpen, Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff, Lock, Unlock, Layers,
     Image as ImageIcon, FileText, Hash, TrendingUp, Target, Users, Calendar, Send, Archive,
     Bookmark, Star, Heart, MoreHorizontal, Filter, SortAsc, Search, X, Upload, Paintbrush,
-    Ratio, Monitor, Smartphone, Tablet, PanelLeft, BarChart3, PieChart, Activity, FileArchive
+    Ratio, Monitor, Smartphone, Tablet, PanelLeft, BarChart3, PieChart, Activity, FileArchive,
+    Sheet
 } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 import ImageViewer from './ImageViewer';
@@ -130,6 +132,11 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
     const [isPosting, setIsPosting] = useState(false);
     const [postingPlatform, setPostingPlatform] = useState<string | null>(null);
     const [postResults, setPostResults] = useState<{platform: string, success: boolean, message: string}[]>([]);
+
+    // Google Sheets Export State
+    const [isExportingToSheets, setIsExportingToSheets] = useState(false);
+    const [exportingPlatform, setExportingPlatform] = useState<string | null>(null);
+    const [sheetsExportResults, setSheetsExportResults] = useState<{platform: string, success: boolean, message: string, driveUrl?: string}[]>([]);
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -434,6 +441,64 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
         setPostResults([]); // Clear previous results
         for (const post of generatedPosts) {
             await handlePostToPlatform(post.platform, post.content);
+        }
+    };
+
+    // Export single post to Google Sheets
+    const handleExportToSheets = async (platform: string, content: string) => {
+        if (!imageData) return;
+
+        setIsExportingToSheets(true);
+        setExportingPlatform(platform);
+
+        try {
+            // Extract hashtags from content
+            const hashtagMatch = content.match(/#\w+/g);
+            const hashtags = hashtagMatch ? hashtagMatch.join(' ') : '';
+            const captionWithoutHashtags = content.replace(/#\w+\s*/g, '').trim();
+
+            // Create title from source input
+            let title = inputValue;
+            if (inputMode === 'url') {
+                try { title = new URL(inputValue).hostname; } catch(e) {}
+            } else {
+                title = inputValue.length > 50 ? inputValue.substring(0, 50) + '...' : inputValue;
+            }
+
+            const result = await exportToGoogleSheets({
+                title: `${platform} - ${title}`,
+                caption: captionWithoutHashtags,
+                hashtags,
+                platform,
+                imageBase64: imageData,
+                status: 'Ready to Post',
+            });
+
+            setSheetsExportResults(prev => [...prev, {
+                platform,
+                success: result.success,
+                message: result.message,
+                driveUrl: result.driveFileUrl,
+            }]);
+        } catch (err: any) {
+            setSheetsExportResults(prev => [...prev, {
+                platform,
+                success: false,
+                message: err.message || 'Failed to export to Google Sheets',
+            }]);
+        } finally {
+            setIsExportingToSheets(false);
+            setExportingPlatform(null);
+        }
+    };
+
+    // Export all posts to Google Sheets
+    const handleExportAllToSheets = async () => {
+        if (generatedPosts.length === 0 || !imageData) return;
+
+        setSheetsExportResults([]); // Clear previous results
+        for (const post of generatedPosts) {
+            await handleExportToSheets(post.platform, post.content);
         }
     };
 
@@ -904,23 +969,42 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                                 <Share2 className="w-5 h-5 text-emerald-400" />
                                                 Social Media Posts
                                             </h3>
-                                            <button
-                                                onClick={handlePostToAllPlatforms}
-                                                disabled={isPosting || !imageData}
-                                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-                                            >
-                                                {isPosting ? (
-                                                    <>
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                        Posting...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Send className="w-4 h-4" />
-                                                        Post to All Platforms
-                                                    </>
-                                                )}
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={handlePostToAllPlatforms}
+                                                    disabled={isPosting || !imageData}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                                >
+                                                    {isPosting ? (
+                                                        <>
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                            Posting...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Send className="w-4 h-4" />
+                                                            Post to All
+                                                        </>
+                                                    )}
+                                                </button>
+                                                <button
+                                                    onClick={handleExportAllToSheets}
+                                                    disabled={isExportingToSheets || !imageData}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                                >
+                                                    {isExportingToSheets ? (
+                                                        <>
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                            Exporting...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Sheet className="w-4 h-4" />
+                                                            Send to Google Sheets
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Post Results */}
@@ -943,11 +1027,44 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                             </div>
                                         )}
 
+                                        {/* Google Sheets Export Results */}
+                                        {sheetsExportResults.length > 0 && (
+                                            <div className="mb-4 space-y-2">
+                                                {sheetsExportResults.map((result, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className={`p-3 rounded-lg flex items-center justify-between text-sm ${
+                                                            result.success
+                                                                ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                                                                : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            {result.success ? <Sheet className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                                            <span className="font-medium">{result.platform}:</span>
+                                                            <span>{result.message}</span>
+                                                        </div>
+                                                        {result.success && result.driveUrl && (
+                                                            <a
+                                                                href={result.driveUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex items-center gap-1 text-xs text-green-300 hover:text-green-200 underline"
+                                                            >
+                                                                View in Drive <ExternalLink className="w-3 h-3" />
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         <div className="space-y-4">
                                             {generatedPosts.map((post, idx) => {
                                                 const platform = PLATFORMS.find(p => p.id === post.platform);
                                                 const Icon = platform?.icon || MessageSquare;
                                                 const isCurrentlyPosting = isPosting && postingPlatform === post.platform;
+                                                const isCurrentlyExporting = isExportingToSheets && exportingPlatform === post.platform;
                                                 return (
                                                     <div key={idx} className="p-4 rounded-xl bg-slate-950/50 border border-white/5 hover:border-emerald-500/30 transition-colors">
                                                         <div className="flex items-center justify-between mb-3">
@@ -974,6 +1091,24 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                                                         <>
                                                                             <Copy className="w-3 h-3" />
                                                                             Copy
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleExportToSheets(post.platform, post.content)}
+                                                                    disabled={isExportingToSheets || !imageData}
+                                                                    className="flex items-center gap-1 px-3 py-1 bg-green-600/20 hover:bg-green-600/30 text-green-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                                                                    title="Send to Google Sheets"
+                                                                >
+                                                                    {isCurrentlyExporting ? (
+                                                                        <>
+                                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                                            Sending...
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Sheet className="w-3 h-3" />
+                                                                            Sheets
                                                                         </>
                                                                     )}
                                                                 </button>
