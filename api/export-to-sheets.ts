@@ -10,9 +10,6 @@ import https from 'https';
 // https://docs.google.com/spreadsheets/d/1jMk9ARf0kj7EJ-1ds-RuU92cG_1W7WaNx6TdYJvU-aU
 const GOOGLE_SHEET_ID = '1jMk9ARf0kj7EJ-1ds-RuU92cG_1W7WaNx6TdYJvU-aU';
 
-// Sheet name (first sheet by default)
-const SHEET_NAME = 'Sheet1';
-
 // ImgBB API for hosting images (same as Instagram integration)
 const IMGBB_API_KEY = '74b6c0a4993129181bf3413ee86029e2';
 
@@ -142,6 +139,25 @@ function getGoogleAuthClient() {
 // =============================================================================
 
 /**
+ * Gets the name of the first sheet in the spreadsheet
+ */
+async function getFirstSheetName(auth: any): Promise<string> {
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    const response = await sheets.spreadsheets.get({
+        spreadsheetId: GOOGLE_SHEET_ID,
+        fields: 'sheets.properties.title',
+    });
+
+    const firstSheet = response.data.sheets?.[0];
+    if (!firstSheet?.properties?.title) {
+        throw new Error('Could not find any sheets in the spreadsheet');
+    }
+
+    return firstSheet.properties.title;
+}
+
+/**
  * Appends a row to the Google Sheet with the post data
  */
 async function appendRowToSheet(
@@ -153,13 +169,17 @@ async function appendRowToSheet(
     const auth = getGoogleAuthClient();
     const sheets = google.sheets({ version: 'v4', auth });
 
+    // Get the actual first sheet name (might not be "Sheet1")
+    const sheetName = await getFirstSheetName(auth);
+    console.log('Using sheet:', sheetName);
+
     // Append the row data
     // Column order: Title, Media URL, Caption, Status
     const values = [[title, mediaUrl, caption, status]];
 
     const response = await sheets.spreadsheets.values.append({
         spreadsheetId: GOOGLE_SHEET_ID,
-        range: `${SHEET_NAME}!A:D`,
+        range: `'${sheetName}'!A:D`,
         valueInputOption: 'USER_ENTERED',
         insertDataOption: 'INSERT_ROWS',
         requestBody: {
