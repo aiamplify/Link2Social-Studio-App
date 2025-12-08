@@ -31,9 +31,9 @@ const LINKEDIN_CREDENTIALS = {
 // Instagram API Credentials - Instagram Graph API (via Facebook)
 // Get these from: https://developers.facebook.com/apps
 const INSTAGRAM_CREDENTIALS = {
-    accessToken: '',         // Long-lived User Access Token
-    instagramAccountId: '',  // Instagram Business/Creator Account ID
-    facebookPageId: '',      // Connected Facebook Page ID
+    accessToken: 'EAAoLa0r1ya8BQATZB02rbV8NjfZBIewIoy6LM9hLEaFuqRVLls3oaiZBeR2oFYplCwItGzdLRo8d1g0phvPD54zWTMbUdZCWfuk6G8xZCGINmTo6W1mOlMmoJdbtwLLBTaSg9fqUkHvCDcHI3YIWYy3MFdtyDZBbLu24PXZAaserKrTSeDlkQhl6wi3QrPsAnWFR432xwRebWrydWyXmZBmsfVO3Xbg4735Y8y9GgQZDZD',
+    instagramAccountId: '17841460156952672',
+    facebookPageId: '100224776504039',
 };
 
 // =============================================================================
