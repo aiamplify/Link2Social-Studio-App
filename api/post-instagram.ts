@@ -6,8 +6,8 @@ const INSTAGRAM_CREDENTIALS = {
     instagramAccountId: '17841460156952672',
 };
 
-// ImgBB API for hosting images
-const IMGBB_API_KEY = ''; // Add your ImgBB API key here
+// ImgBB API for hosting images (free tier)
+const IMGBB_API_KEY = '74b6c0a4993129181bf3413ee86029e2';
 
 async function uploadToImgBB(base64Image: string): Promise<string | null> {
     if (!IMGBB_API_KEY) {
