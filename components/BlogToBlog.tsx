@@ -58,8 +58,30 @@ const FONT_OPTIONS = [
     { label: "Roboto (Sans)", value: "Roboto, sans-serif", category: "sans" },
     { label: "Open Sans (Sans)", value: "Open Sans, sans-serif", category: "sans" },
     { label: "Playfair Display (Serif)", value: "Playfair Display, serif", category: "serif" },
+    { label: "Georgia (Serif)", value: "Georgia, serif", category: "serif" },
+    { label: "Lato (Sans)", value: "Lato, sans-serif", category: "sans" },
+    { label: "Source Sans Pro (Sans)", value: "Source Sans Pro, sans-serif", category: "sans" },
     { label: "JetBrains Mono (Mono)", value: "JetBrains Mono, monospace", category: "mono" },
-    { label: "Custom", value: "Custom", category: "custom" },
+    { label: "Custom", value: "custom", category: "custom" },
+];
+
+// Font size options
+const FONT_SIZE_OPTIONS = [
+    { label: "Small (14px)", value: "text-sm", pixels: "14px" },
+    { label: "Medium (16px)", value: "text-base", pixels: "16px" },
+    { label: "Large (18px)", value: "text-lg", pixels: "18px" },
+    { label: "Extra Large (20px)", value: "text-xl", pixels: "20px" },
+    { label: "2XL (24px)", value: "text-2xl", pixels: "24px" },
+    { label: "Custom", value: "custom", pixels: "custom" },
+];
+
+// Line height options
+const LINE_HEIGHT_OPTIONS = [
+    { label: "Tight", value: "leading-tight", description: "1.25" },
+    { label: "Snug", value: "leading-snug", description: "1.375" },
+    { label: "Normal", value: "leading-normal", description: "1.5" },
+    { label: "Relaxed", value: "leading-relaxed", description: "1.625" },
+    { label: "Loose", value: "leading-loose", description: "2" },
 ];
 
 // Image count options
@@ -109,9 +131,21 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
     const [imageCount, setImageCount] = useState(3);
     const [selectedTone, setSelectedTone] = useState(TONE_OPTIONS[0]);
     
-    // Font
+    // Font & Typography
     const [selectedFont, setSelectedFont] = useState(FONT_OPTIONS[0].value);
     const [customFont, setCustomFont] = useState('');
+    const [selectedFontSize, setSelectedFontSize] = useState(FONT_SIZE_OPTIONS[3].value); // Default to Extra Large (20px)
+    const [customFontSize, setCustomFontSize] = useState('22');
+    const [selectedLineHeight, setSelectedLineHeight] = useState(LINE_HEIGHT_OPTIONS[3].value); // Default to Relaxed
+
+    // Styling Controls
+    const [useBulletPoints, setUseBulletPoints] = useState(true);
+    const [useNumberedLists, setUseNumberedLists] = useState(true);
+    const [useBoldHeaders, setUseBoldHeaders] = useState(true);
+    const [useBlockquotes, setUseBlockquotes] = useState(true);
+    const [useHighlightedText, setUseHighlightedText] = useState(true);
+    const [useHyperlinks, setUseHyperlinks] = useState(true);
+    const [paragraphSpacing, setParagraphSpacing] = useState<'compact' | 'normal' | 'spacious'>('normal');
 
     // SEO Settings
     const [targetKeyword, setTargetKeyword] = useState('');
@@ -434,7 +468,42 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
     };
 
     const getActiveFont = () => {
-        return selectedFont === 'Custom' ? customFont : selectedFont;
+        return selectedFont === 'custom' ? customFont : selectedFont;
+    };
+
+    const getActiveFontSize = () => {
+        if (selectedFontSize === 'custom') {
+            return `${customFontSize}px`;
+        }
+        // Map Tailwind classes to CSS values
+        const sizeMap: Record<string, string> = {
+            'text-sm': '14px',
+            'text-base': '16px',
+            'text-lg': '18px',
+            'text-xl': '20px',
+            'text-2xl': '24px',
+        };
+        return sizeMap[selectedFontSize] || '20px';
+    };
+
+    const getActiveLineHeight = () => {
+        const heightMap: Record<string, string> = {
+            'leading-tight': '1.25',
+            'leading-snug': '1.375',
+            'leading-normal': '1.5',
+            'leading-relaxed': '1.625',
+            'leading-loose': '2',
+        };
+        return heightMap[selectedLineHeight] || '1.625';
+    };
+
+    const getParagraphMargin = () => {
+        const marginMap: Record<string, string> = {
+            'compact': '1rem',
+            'normal': '1.5rem',
+            'spacious': '2rem',
+        };
+        return marginMap[paragraphSpacing] || '1.5rem';
     };
 
     const generateHtmlCode = () => {
@@ -463,18 +532,23 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
 
     const renderContentWithImages = () => {
         if (!result) return null;
-        
+
         const parts = editContent.split(/(\[\[IMAGE_\d+\]\])/g);
-        const fontStyle = { fontFamily: getActiveFont().split(',')[0] };
-        
+        const contentStyle = {
+            fontFamily: getActiveFont(),
+            fontSize: getActiveFontSize(),
+            lineHeight: getActiveLineHeight(),
+        };
+        const paragraphMargin = getParagraphMargin();
+
         return (
-            <div className="text-[1.1rem] leading-[1.8] text-slate-300" style={fontStyle}>
+            <div className="text-slate-300" style={contentStyle}>
                 {parts.map((part, idx) => {
                     const match = part.match(/\[\[IMAGE_(\d+)\]\]/);
                     if (match) {
                         const imgIndex = parseInt(match[1]);
                         const visual = result.visuals.find(v => v.id === `image_${imgIndex}`);
-                        
+
                         if (visual) {
                             return (
                                 <div key={idx} className="my-12 group relative rounded-xl overflow-hidden shadow-lg border border-white/10 bg-slate-950">
@@ -483,14 +557,14 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                     ) : (
                                         <div className="flex items-center justify-center h-64 w-full bg-slate-900 text-slate-500 text-sm">Generating Visual...</div>
                                     )}
-                                    
+
                                     <div className="py-3 px-4 text-center text-sm font-medium text-slate-400 bg-slate-900/80 border-t border-white/5 italic">
                                         {visual.caption}
                                     </div>
 
                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 backdrop-blur-sm z-10">
                                         <div className="flex gap-2">
-                                            <button 
+                                            <button
                                                 onClick={() => handleRegenerateImage(visual)}
                                                 disabled={regeneratingId === visual.id}
                                                 className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 rounded-lg text-white text-xs font-bold flex items-center gap-2 transition-colors"
@@ -498,7 +572,7 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                                 {regeneratingId === visual.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                                                 Re-Roll
                                             </button>
-                                            <button 
+                                            <button
                                                 onClick={() => triggerImageUpload(visual.id)}
                                                 className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white text-xs font-bold flex items-center gap-2 transition-colors border border-white/10"
                                             >
@@ -512,20 +586,109 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                         return null;
                     } else {
                         return (
-                            <span key={idx} className="prose prose-lg prose-invert max-w-none">
+                            <span key={idx} className="prose prose-invert max-w-none">
                                 {part.split('\n').map((line, i) => {
                                     if (!line.trim()) return <br key={i}/>;
                                     if (line.startsWith('# ')) return null;
-                                    if (line.startsWith('## ')) return <h2 key={i} className="text-2xl font-bold mt-12 mb-6 text-white">{line.replace('## ', '')}</h2>;
-                                    if (line.startsWith('### ')) return <h3 key={i} className="text-xl font-bold mt-10 mb-4 text-slate-200">{line.replace('### ', '')}</h3>;
-                                    if (line.startsWith('- ')) return <li key={i} className="ml-4 list-disc mb-3 pl-2 text-lg leading-relaxed">{line.replace('- ', '')}</li>;
 
-                                    const richText = line
-                                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                        .replace(/<span class="blue">(.*?)<\/span>/g, '<span class="text-orange-400 font-semibold">$1</span>')
-                                        .replace(/<u>(.*?)<\/u>/g, '<span class="underline decoration-orange-500 decoration-2 underline-offset-4">$1</span>');
+                                    // Headers
+                                    if (line.startsWith('## ')) {
+                                        return (
+                                            <h2
+                                                key={i}
+                                                className="text-2xl mt-12 mb-6 text-white"
+                                                style={{ fontWeight: useBoldHeaders ? 'bold' : 'normal' }}
+                                            >
+                                                {line.replace('## ', '')}
+                                            </h2>
+                                        );
+                                    }
+                                    if (line.startsWith('### ')) {
+                                        return (
+                                            <h3
+                                                key={i}
+                                                className="text-xl mt-10 mb-4 text-slate-200"
+                                                style={{ fontWeight: useBoldHeaders ? 'bold' : 'normal' }}
+                                            >
+                                                {line.replace('### ', '')}
+                                            </h3>
+                                        );
+                                    }
 
-                                    return <p key={i} className="mb-6 text-lg leading-relaxed" dangerouslySetInnerHTML={{ __html: richText }} />;
+                                    // Bullet points
+                                    if (line.startsWith('- ')) {
+                                        if (!useBulletPoints) {
+                                            // Render as paragraph if bullet points disabled
+                                            return (
+                                                <p key={i} style={{ marginBottom: paragraphMargin }}>
+                                                    {line.replace('- ', '')}
+                                                </p>
+                                            );
+                                        }
+                                        return (
+                                            <li key={i} className="ml-4 list-disc mb-3 pl-2">
+                                                {line.replace('- ', '')}
+                                            </li>
+                                        );
+                                    }
+
+                                    // Numbered lists
+                                    const numberedMatch = line.match(/^(\d+)\.\s+(.+)/);
+                                    if (numberedMatch) {
+                                        if (!useNumberedLists) {
+                                            return (
+                                                <p key={i} style={{ marginBottom: paragraphMargin }}>
+                                                    {numberedMatch[2]}
+                                                </p>
+                                            );
+                                        }
+                                        return (
+                                            <li key={i} className="ml-4 list-decimal mb-3 pl-2">
+                                                {numberedMatch[2]}
+                                            </li>
+                                        );
+                                    }
+
+                                    // Blockquotes
+                                    if (line.startsWith('> ')) {
+                                        if (!useBlockquotes) {
+                                            return (
+                                                <p key={i} className="italic" style={{ marginBottom: paragraphMargin }}>
+                                                    {line.replace('> ', '')}
+                                                </p>
+                                            );
+                                        }
+                                        return (
+                                            <blockquote key={i} className="border-l-4 border-orange-500 pl-4 my-6 italic text-slate-400">
+                                                {line.replace('> ', '')}
+                                            </blockquote>
+                                        );
+                                    }
+
+                                    // Regular paragraphs with rich text
+                                    let richText = line;
+
+                                    // Bold text
+                                    richText = richText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+                                    // Highlighted text (blue span)
+                                    if (useHighlightedText) {
+                                        richText = richText.replace(/<span class="blue">(.*?)<\/span>/g, '<span class="text-orange-400 font-semibold">$1</span>');
+                                    } else {
+                                        richText = richText.replace(/<span class="blue">(.*?)<\/span>/g, '$1');
+                                    }
+
+                                    // Underlined text
+                                    richText = richText.replace(/<u>(.*?)<\/u>/g, '<span class="underline decoration-orange-500 decoration-2 underline-offset-4">$1</span>');
+
+                                    // Hyperlinks
+                                    if (useHyperlinks) {
+                                        richText = richText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-orange-400 hover:text-orange-300 underline" target="_blank" rel="noopener noreferrer">$1</a>');
+                                    } else {
+                                        richText = richText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+                                    }
+
+                                    return <p key={i} style={{ marginBottom: paragraphMargin }} dangerouslySetInnerHTML={{ __html: richText }} />;
                                 })}
                             </span>
                         );
@@ -821,8 +984,10 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                         </button>
 
                         {showAdvanced && (
-                            <div className="space-y-4 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
+                            <div className="space-y-6 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
+                                {/* Content Sections */}
                                 <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Content Sections</h4>
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-slate-300">Table of Contents</span>
                                         <button
@@ -852,40 +1017,206 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-500">Author Name</label>
-                                        <input
-                                            type="text"
-                                            value={authorName}
-                                            onChange={(e) => setAuthorName(e.target.value)}
-                                            placeholder="Your name"
-                                            className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-500">Category</label>
-                                        <input
-                                            type="text"
-                                            value={categoryTag}
-                                            onChange={(e) => setCategoryTag(e.target.value)}
-                                            placeholder="e.g., Technology"
-                                            className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200"
-                                        />
+                                {/* Author & Category */}
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Metadata</h4>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-slate-500">Author Name</label>
+                                            <input
+                                                type="text"
+                                                value={authorName}
+                                                onChange={(e) => setAuthorName(e.target.value)}
+                                                placeholder="Your name"
+                                                className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-slate-500">Category</label>
+                                            <input
+                                                type="text"
+                                                value={categoryTag}
+                                                onChange={(e) => setCategoryTag(e.target.value)}
+                                                placeholder="e.g., Technology"
+                                                className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs text-slate-500">Font Family</label>
-                                    <select
-                                        value={selectedFont}
-                                        onChange={(e) => setSelectedFont(e.target.value)}
-                                        className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-orange-500/50"
-                                    >
-                                        {FONT_OPTIONS.map(font => (
-                                            <option key={font.value} value={font.value}>{font.label}</option>
-                                        ))}
-                                    </select>
+                                {/* Typography Section */}
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                        <Type className="w-4 h-4" />
+                                        Typography
+                                    </h4>
+
+                                    {/* Font Family */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500">Font Family</label>
+                                        <select
+                                            value={selectedFont}
+                                            onChange={(e) => setSelectedFont(e.target.value)}
+                                            className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-orange-500/50"
+                                        >
+                                            {FONT_OPTIONS.map(font => (
+                                                <option key={font.value} value={font.value}>{font.label}</option>
+                                            ))}
+                                        </select>
+                                        {selectedFont === 'custom' && (
+                                            <input
+                                                type="text"
+                                                value={customFont}
+                                                onChange={(e) => setCustomFont(e.target.value)}
+                                                placeholder="Enter font family (e.g., Arial, Helvetica)"
+                                                className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200 mt-2"
+                                            />
+                                        )}
+                                    </div>
+
+                                    {/* Font Size */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500">Font Size</label>
+                                        <select
+                                            value={selectedFontSize}
+                                            onChange={(e) => setSelectedFontSize(e.target.value)}
+                                            className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-orange-500/50"
+                                        >
+                                            {FONT_SIZE_OPTIONS.map(size => (
+                                                <option key={size.value} value={size.value}>{size.label}</option>
+                                            ))}
+                                        </select>
+                                        {selectedFontSize === 'custom' && (
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <input
+                                                    type="number"
+                                                    value={customFontSize}
+                                                    onChange={(e) => setCustomFontSize(e.target.value)}
+                                                    placeholder="Size"
+                                                    min="10"
+                                                    max="48"
+                                                    className="flex-1 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-200"
+                                                />
+                                                <span className="text-sm text-slate-500">px</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Line Height */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500">Line Height</label>
+                                        <select
+                                            value={selectedLineHeight}
+                                            onChange={(e) => setSelectedLineHeight(e.target.value)}
+                                            className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-orange-500/50"
+                                        >
+                                            {LINE_HEIGHT_OPTIONS.map(height => (
+                                                <option key={height.value} value={height.value}>{height.label} ({height.description})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Paragraph Spacing */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500">Paragraph Spacing</label>
+                                        <div className="flex gap-2">
+                                            {(['compact', 'normal', 'spacious'] as const).map((spacing) => (
+                                                <button
+                                                    key={spacing}
+                                                    onClick={() => setParagraphSpacing(spacing)}
+                                                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all capitalize ${
+                                                        paragraphSpacing === spacing
+                                                            ? 'bg-orange-500 text-white'
+                                                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                                                    }`}
+                                                >
+                                                    {spacing}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Formatting Elements */}
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                        <List className="w-4 h-4" />
+                                        Formatting Elements
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50">
+                                            <span className="text-sm text-slate-300 flex items-center gap-2">
+                                                <List className="w-4 h-4 text-orange-400" />
+                                                Bullet Points
+                                            </span>
+                                            <button
+                                                onClick={() => setUseBulletPoints(!useBulletPoints)}
+                                                className={`w-10 h-6 rounded-full transition-colors ${useBulletPoints ? 'bg-orange-500' : 'bg-slate-700'}`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useBulletPoints ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50">
+                                            <span className="text-sm text-slate-300 flex items-center gap-2">
+                                                <ListOrdered className="w-4 h-4 text-orange-400" />
+                                                Numbered Lists
+                                            </span>
+                                            <button
+                                                onClick={() => setUseNumberedLists(!useNumberedLists)}
+                                                className={`w-10 h-6 rounded-full transition-colors ${useNumberedLists ? 'bg-orange-500' : 'bg-slate-700'}`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useNumberedLists ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50">
+                                            <span className="text-sm text-slate-300 flex items-center gap-2">
+                                                <Bold className="w-4 h-4 text-orange-400" />
+                                                Bold Headers
+                                            </span>
+                                            <button
+                                                onClick={() => setUseBoldHeaders(!useBoldHeaders)}
+                                                className={`w-10 h-6 rounded-full transition-colors ${useBoldHeaders ? 'bg-orange-500' : 'bg-slate-700'}`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useBoldHeaders ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50">
+                                            <span className="text-sm text-slate-300 flex items-center gap-2">
+                                                <Quote className="w-4 h-4 text-orange-400" />
+                                                Blockquotes
+                                            </span>
+                                            <button
+                                                onClick={() => setUseBlockquotes(!useBlockquotes)}
+                                                className={`w-10 h-6 rounded-full transition-colors ${useBlockquotes ? 'bg-orange-500' : 'bg-slate-700'}`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useBlockquotes ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50">
+                                            <span className="text-sm text-slate-300 flex items-center gap-2">
+                                                <Sparkles className="w-4 h-4 text-orange-400" />
+                                                Highlighted Text
+                                            </span>
+                                            <button
+                                                onClick={() => setUseHighlightedText(!useHighlightedText)}
+                                                className={`w-10 h-6 rounded-full transition-colors ${useHighlightedText ? 'bg-orange-500' : 'bg-slate-700'}`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useHighlightedText ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50">
+                                            <span className="text-sm text-slate-300 flex items-center gap-2">
+                                                <Link className="w-4 h-4 text-orange-400" />
+                                                Hyperlinks
+                                            </span>
+                                            <button
+                                                onClick={() => setUseHyperlinks(!useHyperlinks)}
+                                                className={`w-10 h-6 rounded-full transition-colors ${useHyperlinks ? 'bg-orange-500' : 'bg-slate-700'}`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useHyperlinks ? 'translate-x-5' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}

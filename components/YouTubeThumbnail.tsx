@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useRef, useCallback } from 'react';
-import { 
-    Youtube, Loader2, AlertCircle, Download, Copy, Check, Image as ImageIcon, Sparkles, 
+import { generateYouTubeThumbnail, editImageWithGemini } from '../services/geminiService';
+import {
+    Youtube, Loader2, AlertCircle, Download, Copy, Check, Image as ImageIcon, Sparkles,
     RefreshCw, Wand2, X, Upload, Palette, Type, Layout, Eye, EyeOff, Maximize, Minimize,
     ChevronDown, ChevronUp, Settings, Sliders, Target, TrendingUp, BarChart3, Users, Hash,
     Zap, Award, Star, Heart, MousePointer, Lightbulb, CheckCircle2, XCircle, Info, HelpCircle,
@@ -14,7 +15,7 @@ import {
     Clock, Calendar, Bookmark, MoreHorizontal, Filter, Search, Edit3, Move, RotateCcw,
     Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Droplet, Sun, Moon,
     Contrast, Crop, FlipHorizontal, FlipVertical, ZoomIn, ZoomOut, Lock, Unlock, Link,
-    Shuffle, Copy as CopyIcon, Clipboard, FileText, Video, Film, Camera, Aperture
+    Shuffle, Copy as CopyIcon, Clipboard, FileText, Video, Film, Camera, Aperture, BookOpen
 } from 'lucide-react';
 import ImageViewer from './ImageViewer';
 
@@ -111,6 +112,80 @@ const ASPECT_RATIOS = [
     { id: '9:16', label: '9:16 (Shorts)', width: 720, height: 1280 },
 ];
 
+// Thumbnail templates
+const THUMBNAIL_TEMPLATES = [
+    {
+        id: 'none',
+        name: 'No Template',
+        description: 'Start from scratch',
+        layout: '',
+        icon: Layout,
+    },
+    {
+        id: 'face-left-text-right',
+        name: 'Face Left + Text Right',
+        description: 'Person on left side with bold text on the right',
+        layout: 'Place a person/face prominently on the LEFT side of the image (taking up about 40% of the frame). Add large, bold text on the RIGHT side. Use a gradient or solid color background.',
+        icon: Users,
+    },
+    {
+        id: 'face-right-text-left',
+        name: 'Face Right + Text Left',
+        description: 'Person on right side with bold text on the left',
+        layout: 'Place a person/face prominently on the RIGHT side of the image (taking up about 40% of the frame). Add large, bold text on the LEFT side. Use a gradient or solid color background.',
+        icon: Users,
+    },
+    {
+        id: 'centered-face-text-top',
+        name: 'Centered Face + Text Top',
+        description: 'Person centered with text overlay at top',
+        layout: 'Place a person/face CENTERED in the image with a dramatic expression. Add large bold text at the TOP of the image. Background should have depth or bokeh effect.',
+        icon: Target,
+    },
+    {
+        id: 'split-screen',
+        name: 'Split Screen Before/After',
+        description: 'Two-panel comparison layout',
+        layout: 'Create a SPLIT SCREEN design with a clear vertical divider. Left side shows "before" or problem state, right side shows "after" or solution. Add contrasting colors to each side.',
+        icon: Layers,
+    },
+    {
+        id: 'reaction-style',
+        name: 'Reaction Style',
+        description: 'Exaggerated reaction with arrows/circles',
+        layout: 'Large shocked/surprised FACE expression taking up most of the frame. Add RED ARROWS pointing to something interesting. Include CIRCLE highlights. Very high contrast and saturation.',
+        icon: AlertCircle,
+    },
+    {
+        id: 'tutorial-style',
+        name: 'Tutorial/How-To',
+        description: 'Step numbers with preview',
+        layout: 'Show a PREVIEW of the end result or topic. Add a large NUMBER or "HOW TO" text. Include smaller supporting visuals. Clean, educational look with good contrast.',
+        icon: BookOpen,
+    },
+    {
+        id: 'listicle',
+        name: 'Listicle/Top 10',
+        description: 'Big number with topic imagery',
+        layout: 'Feature a LARGE NUMBER prominently (like "TOP 10" or "5 WAYS"). Add relevant imagery around/behind the number. Bold, eye-catching colors. Text describing the list topic.',
+        icon: Hash,
+    },
+    {
+        id: 'product-showcase',
+        name: 'Product Showcase',
+        description: 'Product front and center with person',
+        layout: 'Product or item PROMINENTLY displayed in the center. Person holding or reacting to the product on one side. Clean background with subtle gradient. Price or key feature highlighted.',
+        icon: Star,
+    },
+    {
+        id: 'dramatic-text',
+        name: 'Dramatic Text Only',
+        description: 'Bold text with dramatic background',
+        layout: 'MASSIVE bold text taking up most of the frame. Dramatic background (flames, lightning, gradient). High contrast. Text should be slightly 3D or have strong shadow/glow effects.',
+        icon: Type,
+    },
+];
+
 // Thumbnail variant interface
 interface ThumbnailVariant {
     id: string;
@@ -145,6 +220,26 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [videoDescription, setVideoDescription] = useState('');
     const [targetAudience, setTargetAudience] = useState('');
     const [keywords, setKeywords] = useState('');
+    const [customPrompt, setCustomPrompt] = useState('');
+    const [videoScript, setVideoScript] = useState('');
+
+    // Template selection
+    const [selectedTemplate, setSelectedTemplate] = useState(THUMBNAIL_TEMPLATES[0]);
+
+    // Self portrait image (image of user to include in thumbnail)
+    const [selfPortrait, setSelfPortrait] = useState<{ data: string; name: string } | null>(null);
+    const selfPortraitInputRef = useRef<HTMLInputElement>(null);
+
+    // Style reference image (another thumbnail to use as style reference)
+    const [styleReference, setStyleReference] = useState<{ data: string; name: string } | null>(null);
+    const styleReferenceInputRef = useRef<HTMLInputElement>(null);
+
+    // Script file input ref
+    const scriptFileInputRef = useRef<HTMLInputElement>(null);
+
+    // Legacy reference images (keeping for backward compatibility)
+    const [referenceImages, setReferenceImages] = useState<{ data: string; name: string }[]>([]);
+    const referenceInputRef = useRef<HTMLInputElement>(null);
     
     // Style configuration
     const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0]);
@@ -171,15 +266,32 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const [brightness, setBrightness] = useState(100);
     const [contrast, setContrast] = useState(100);
     const [saturation, setSaturation] = useState(100);
-    
+    const [useViralResearch, setUseViralResearch] = useState(true);
+
     // A/B Testing
     const [variants, setVariants] = useState<ThumbnailVariant[]>([]);
     const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
     const [showABPanel, setShowABPanel] = useState(false);
-    
+
     // Batch generation
-    const [batchCount, setBatchCount] = useState(3);
+    const [batchCount, setBatchCount] = useState(5);
     const [batchMode, setBatchMode] = useState(false);
+
+    // Multi-version generation
+    const [generateMultiple, setGenerateMultiple] = useState(false);
+    const [alternativeCount, setAlternativeCount] = useState(5);
+    const [alternatives, setAlternatives] = useState<ThumbnailVariant[]>([]);
+
+    // Iterate/Modify modal
+    const [showModifyModal, setShowModifyModal] = useState(false);
+    const [modifyingImage, setModifyingImage] = useState<string | null>(null);
+    const [modifyPrompt, setModifyPrompt] = useState('');
+    const [isModifying, setIsModifying] = useState(false);
+
+    // Send to Veo3 Director modal
+    const [showSendToVeoModal, setShowSendToVeoModal] = useState(false);
+    const [sendingImageData, setSendingImageData] = useState<string | null>(null);
+    const [veoPosition, setVeoPosition] = useState<'first' | 'last'>('first');
     
     // Generation state
     const [loading, setLoading] = useState(false);
@@ -200,6 +312,92 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
     const imageInputRef = useRef<HTMLInputElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
+    // Handle reference image upload
+    const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+
+        Array.from(files).forEach(file => {
+            if (referenceImages.length >= 2) {
+                setError("Maximum 2 reference images allowed");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result as string;
+                const base64Data = base64.split(',')[1];
+                setReferenceImages(prev => {
+                    if (prev.length >= 2) return prev;
+                    return [...prev, { data: base64Data, name: file.name }];
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Reset input
+        if (referenceInputRef.current) {
+            referenceInputRef.current.value = '';
+        }
+    };
+
+    // Handle self portrait upload
+    const handleSelfPortraitUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            const base64Data = base64.split(',')[1];
+            setSelfPortrait({ data: base64Data, name: file.name });
+        };
+        reader.readAsDataURL(file);
+
+        if (selfPortraitInputRef.current) {
+            selfPortraitInputRef.current.value = '';
+        }
+    };
+
+    // Handle style reference upload
+    const handleStyleReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            const base64Data = base64.split(',')[1];
+            setStyleReference({ data: base64Data, name: file.name });
+        };
+        reader.readAsDataURL(file);
+
+        if (styleReferenceInputRef.current) {
+            styleReferenceInputRef.current.value = '';
+        }
+    };
+
+    // Handle script file upload
+    const handleScriptFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const text = reader.result as string;
+            setVideoScript(text);
+        };
+        reader.readAsText(file);
+
+        if (scriptFileInputRef.current) {
+            scriptFileInputRef.current.value = '';
+        }
+    };
+
+    const removeReferenceImage = (index: number) => {
+        setReferenceImages(prev => prev.filter((_, i) => i !== index));
+    };
+
     // Generate thumbnail using Gemini
     const generateThumbnail = async (variantId?: string) => {
         if (!videoTitle.trim()) {
@@ -212,107 +410,90 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
         setLoadingStage('Analyzing video concept...');
 
         try {
-            // Build the prompt
+            // Build the full topic/prompt
             const styleToUse = selectedStyle.id === 'custom' ? customStyle : selectedStyle.name;
-            
-            let prompt = `Create a highly engaging YouTube thumbnail for a video titled "${videoTitle}".`;
-            
+
+            let topic = videoTitle;
             if (videoDescription) {
-                prompt += ` Video description: ${videoDescription}.`;
+                topic += `. Description: ${videoDescription}`;
             }
-            
             if (targetAudience) {
-                prompt += ` Target audience: ${targetAudience}.`;
+                topic += `. Target audience: ${targetAudience}`;
             }
-            
             if (keywords) {
-                prompt += ` Keywords to incorporate: ${keywords}.`;
+                topic += `. Keywords: ${keywords}`;
             }
-            
-            prompt += ` Style: ${styleToUse}.`;
-            prompt += ` Aspect ratio: ${aspectRatio.label}.`;
-            
-            if (includeFace) {
-                prompt += ` Include an expressive human face showing strong emotion.`;
+
+            // Add video script context if provided
+            if (videoScript.trim()) {
+                const scriptSummary = videoScript.length > 1000
+                    ? videoScript.substring(0, 1000) + '...'
+                    : videoScript;
+                topic += `. VIDEO SCRIPT CONTEXT: ${scriptSummary}`;
             }
-            
+
+            // Add template layout instructions
+            if (selectedTemplate.id !== 'none' && selectedTemplate.layout) {
+                topic += `. TEMPLATE LAYOUT: ${selectedTemplate.layout}`;
+            }
+
+            if (customPrompt) {
+                topic += `. SPECIFIC INSTRUCTIONS: ${customPrompt}`;
+            }
+
+            // Add style reference context
+            if (styleReference) {
+                topic += `. STYLE REFERENCE: Use the provided reference image as inspiration for the visual style, color palette, and composition.`;
+            }
+
+            // Add self portrait context
+            if (selfPortrait) {
+                topic += `. PERSON IMAGE: Include the person from the provided portrait image in the thumbnail. Make them look natural and integrated into the scene.`;
+            }
+
+            // Build emotion/style hints
+            let emotion = '';
+            if (includeFace || selfPortrait) {
+                emotion = 'expressive human face with strong emotion';
+            }
             if (includeEmoji) {
-                prompt += ` Include relevant emojis as visual elements.`;
+                emotion += emotion ? ', with emojis' : 'with emojis';
             }
-            
             if (includeArrows) {
-                prompt += ` Include attention-grabbing arrows pointing to key elements.`;
+                emotion += emotion ? ', attention-grabbing arrows' : 'attention-grabbing arrows';
             }
-            
             if (includeCircles) {
-                prompt += ` Include circles highlighting important areas.`;
+                emotion += emotion ? ', highlight circles' : 'highlight circles';
             }
-            
-            prompt += ` Make it eye-catching, high contrast, and optimized for click-through rate.`;
-            prompt += ` The thumbnail should stand out in YouTube search results and suggested videos.`;
 
-            setLoadingStage('Generating thumbnail...');
+            // Determine source image priority: selfPortrait > styleReference > referenceImages
+            const sourceImage = selfPortrait?.data || styleReference?.data || (referenceImages.length > 0 ? referenceImages[0].data : null);
 
-            // Simulate API call (replace with actual Gemini image generation)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // For demo, create a placeholder image
-            const canvas = document.createElement('canvas');
-            canvas.width = aspectRatio.width;
-            canvas.height = aspectRatio.height;
-            const ctx = canvas.getContext('2d');
-            
-            if (ctx) {
-                // Create gradient background
-                const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-                selectedStyle.colors.forEach((color, i) => {
-                    gradient.addColorStop(i / (selectedStyle.colors.length - 1), color);
-                });
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Add text overlay if enabled
-                if (showTextOverlay && textOverlay) {
-                    ctx.font = `bold ${textSize}px ${selectedFont}`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    
-                    if (textShadow) {
-                        ctx.shadowColor = 'rgba(0,0,0,0.8)';
-                        ctx.shadowBlur = 10;
-                        ctx.shadowOffsetX = 4;
-                        ctx.shadowOffsetY = 4;
-                    }
-                    
-                    if (textStroke) {
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = 8;
-                        ctx.strokeText(textOverlay, canvas.width / 2, canvas.height / 2);
-                    }
-                    
-                    ctx.fillStyle = textColor;
-                    ctx.fillText(textOverlay, canvas.width / 2, canvas.height / 2);
-                }
-                
-                // Add "DEMO" watermark
-                ctx.font = 'bold 24px Arial';
-                ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                ctx.textAlign = 'right';
-                ctx.fillText('AI Generated Demo', canvas.width - 20, canvas.height - 20);
+            // Call the actual Gemini API
+            const imageData = await generateYouTubeThumbnail(
+                topic,
+                styleToUse,
+                emotion,
+                textOverlay,
+                useViralResearch,
+                sourceImage,
+                (stage) => setLoadingStage(stage)
+            );
+
+            if (!imageData) {
+                throw new Error("Failed to generate thumbnail - no image data returned");
             }
-            
-            const imageData = canvas.toDataURL('image/png').split(',')[1];
-            
+
             if (variantId) {
                 // Update specific variant
-                setVariants(prev => prev.map(v => 
-                    v.id === variantId 
+                setVariants(prev => prev.map(v =>
+                    v.id === variantId
                         ? { ...v, imageData, isGenerating: false, score: Math.floor(Math.random() * 30) + 70 }
                         : v
                 ));
             } else {
                 setGeneratedImage(imageData);
-                
+
                 // Add to history
                 const newVariant: ThumbnailVariant = {
                     id: `variant_${Date.now()}`,
@@ -326,9 +507,10 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                 };
                 setHistory(prev => [newVariant, ...prev].slice(0, 20));
             }
-            
+
             setLoadingStage('');
         } catch (err: any) {
+            console.error("Thumbnail generation error:", err);
             setError(err.message || "Failed to generate thumbnail");
         } finally {
             setLoading(false);
@@ -380,6 +562,169 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
         setLoading(false);
         setBatchMode(false);
         setLoadingStage('');
+    };
+
+    // Generate multiple alternative versions
+    const generateMultipleVersions = async () => {
+        if (!videoTitle.trim()) {
+            setError("Please enter a video title");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        setAlternatives([]);
+
+        const newAlternatives: ThumbnailVariant[] = [];
+
+        // Create placeholders for all versions
+        for (let i = 0; i < alternativeCount; i++) {
+            newAlternatives.push({
+                id: `alt_${Date.now()}_${i}`,
+                name: `Version ${i + 1}`,
+                imageData: null,
+                style: selectedStyle.name,
+                textOverlay,
+                textPosition,
+                isGenerating: true,
+            });
+        }
+        setAlternatives(newAlternatives);
+
+        // Generate each version
+        for (let i = 0; i < alternativeCount; i++) {
+            setLoadingStage(`Generating version ${i + 1} of ${alternativeCount}...`);
+
+            try {
+                const styleToUse = selectedStyle.id === 'custom' ? customStyle : selectedStyle.name;
+
+                let topic = videoTitle;
+                if (videoDescription) topic += `. Description: ${videoDescription}`;
+                if (targetAudience) topic += `. Target audience: ${targetAudience}`;
+                if (keywords) topic += `. Keywords: ${keywords}`;
+                if (customPrompt) topic += `. SPECIFIC INSTRUCTIONS: ${customPrompt}`;
+
+                // Add variation instruction for diversity
+                topic += `. CREATE VARIATION ${i + 1}: Make this version unique and different from others while keeping the core message.`;
+
+                let emotion = '';
+                if (includeFace) emotion = 'expressive human face with strong emotion';
+                if (includeEmoji) emotion += emotion ? ', with emojis' : 'with emojis';
+                if (includeArrows) emotion += emotion ? ', attention-grabbing arrows' : 'attention-grabbing arrows';
+                if (includeCircles) emotion += emotion ? ', highlight circles' : 'highlight circles';
+
+                const sourceImage = referenceImages.length > 0 ? referenceImages[0].data : null;
+
+                const imageData = await generateYouTubeThumbnail(
+                    topic,
+                    styleToUse,
+                    emotion,
+                    textOverlay,
+                    useViralResearch && i === 0, // Only research for first version
+                    sourceImage,
+                    (stage) => setLoadingStage(`Version ${i + 1}: ${stage}`)
+                );
+
+                setAlternatives(prev => prev.map((alt, idx) =>
+                    idx === i
+                        ? { ...alt, imageData, isGenerating: false, score: Math.floor(Math.random() * 30) + 70 }
+                        : alt
+                ));
+            } catch (err) {
+                console.error(`Error generating version ${i + 1}:`, err);
+                setAlternatives(prev => prev.map((alt, idx) =>
+                    idx === i ? { ...alt, isGenerating: false } : alt
+                ));
+            }
+        }
+
+        setLoading(false);
+        setLoadingStage('');
+    };
+
+    // Open modify modal for an image
+    const openModifyModal = (imageData: string) => {
+        setModifyingImage(imageData);
+        setModifyPrompt('');
+        setShowModifyModal(true);
+    };
+
+    // Handle modifying an image with AI
+    const handleModifyImage = async () => {
+        if (!modifyingImage || !modifyPrompt.trim()) {
+            setError("Please enter modification instructions");
+            return;
+        }
+
+        setIsModifying(true);
+        setError(null);
+
+        try {
+            const modifiedImage = await editImageWithGemini(
+                modifyingImage,
+                'image/png',
+                modifyPrompt
+            );
+
+            if (modifiedImage) {
+                setGeneratedImage(modifiedImage);
+
+                // Add to history
+                const newVariant: ThumbnailVariant = {
+                    id: `modified_${Date.now()}`,
+                    name: `Modified ${history.length + 1}`,
+                    imageData: modifiedImage,
+                    style: selectedStyle.name,
+                    textOverlay,
+                    textPosition,
+                    isGenerating: false,
+                    score: Math.floor(Math.random() * 30) + 70,
+                };
+                setHistory(prev => [newVariant, ...prev].slice(0, 20));
+
+                setShowModifyModal(false);
+                setModifyingImage(null);
+                setModifyPrompt('');
+            } else {
+                throw new Error("Failed to modify image");
+            }
+        } catch (err: any) {
+            console.error("Modify image error:", err);
+            setError(err.message || "Failed to modify image");
+        } finally {
+            setIsModifying(false);
+        }
+    };
+
+    // Open send to Veo modal
+    const openSendToVeoModal = (imageData: string) => {
+        setSendingImageData(imageData);
+        setVeoPosition('first');
+        setShowSendToVeoModal(true);
+    };
+
+    // Send image to Veo3 Director tool
+    const sendToVeoDirector = () => {
+        if (!sendingImageData) return;
+
+        // Save to localStorage for the Veo3 Director tool to pick up
+        const veoData = {
+            imageData: sendingImageData,
+            position: veoPosition,
+            timestamp: new Date().toISOString(),
+            source: 'thumbnail-creator',
+            title: videoTitle || 'Thumbnail',
+        };
+
+        localStorage.setItem('veo3_reference_image', JSON.stringify(veoData));
+
+        // Show success message
+        setError(null);
+        setShowSendToVeoModal(false);
+        setSendingImageData(null);
+
+        // Alert user (could be replaced with a toast notification)
+        alert(`Image saved as ${veoPosition} reference image for Veo3 Director! Navigate to B-Roll Creator to use it.`);
     };
 
     // Download thumbnail
@@ -599,7 +944,276 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                     />
                                 </div>
                             </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs text-slate-500 flex items-center gap-2">
+                                    <Wand2 className="w-3 h-3 text-red-400" />
+                                    Custom Prompt (Optional)
+                                </label>
+                                <textarea
+                                    value={customPrompt}
+                                    onChange={(e) => setCustomPrompt(e.target.value)}
+                                    placeholder="Describe exactly what you want the thumbnail to look like... e.g., 'A shocked face on the left side, bright yellow background, large red arrow pointing to a laptop screen showing code, text should be in the top right corner'"
+                                    className="w-full h-24 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-red-500/50 resize-none"
+                                />
+                                <p className="text-xs text-slate-500">
+                                    Give specific instructions for colors, layout, elements, composition, etc.
+                                </p>
+                            </div>
+
+                            {/* Video Script Input */}
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                <label className="text-xs text-slate-500 flex items-center gap-2">
+                                    <FileText className="w-3 h-3 text-red-400" />
+                                    Video Script (Optional)
+                                </label>
+                                <p className="text-xs text-slate-400 mb-2">
+                                    Paste your script or upload a .txt file to generate a thumbnail based on your video content
+                                </p>
+                                <input
+                                    ref={scriptFileInputRef}
+                                    type="file"
+                                    accept=".txt,.md"
+                                    onChange={handleScriptFileUpload}
+                                    className="hidden"
+                                />
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => scriptFileInputRef.current?.click()}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm text-slate-300 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        Upload .txt File
+                                    </button>
+                                    {videoScript && (
+                                        <button
+                                            onClick={() => setVideoScript('')}
+                                            className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm text-red-400 flex items-center gap-1 transition-colors"
+                                        >
+                                            <X className="w-3 h-3" />
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                                <textarea
+                                    value={videoScript}
+                                    onChange={(e) => setVideoScript(e.target.value)}
+                                    placeholder="Paste your video script here... The AI will analyze it to create a relevant thumbnail."
+                                    className="w-full h-32 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-red-500/50 resize-none"
+                                />
+                                {videoScript && (
+                                    <p className="text-xs text-emerald-400">
+                                        Script loaded: {videoScript.length} characters
+                                    </p>
+                                )}
+                            </div>
                         </div>
+                    </div>
+
+                    {/* Template Selection */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Layout className="w-5 h-5 text-red-400" />
+                            Thumbnail Template
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Choose a layout template to guide the AI in creating your thumbnail
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2">
+                            {THUMBNAIL_TEMPLATES.map(template => {
+                                const Icon = template.icon;
+                                return (
+                                    <button
+                                        key={template.id}
+                                        onClick={() => setSelectedTemplate(template)}
+                                        className={`p-3 rounded-xl text-left transition-all ${
+                                            selectedTemplate.id === template.id
+                                                ? 'bg-red-500/20 border border-red-500/30'
+                                                : 'bg-slate-950/50 border border-white/5 hover:border-white/10'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Icon className={`w-4 h-4 ${selectedTemplate.id === template.id ? 'text-red-400' : 'text-slate-500'}`} />
+                                            <span className="text-xs font-medium text-white truncate">{template.name}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 line-clamp-2">{template.description}</p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Your Photo (Self Portrait) */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Users className="w-5 h-5 text-red-400" />
+                            Your Photo
+                            <span className="text-xs text-slate-500 font-normal">(Optional)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Upload a photo of yourself to include in the thumbnail
+                        </p>
+
+                        <input
+                            ref={selfPortraitInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleSelfPortraitUpload}
+                            className="hidden"
+                        />
+
+                        {!selfPortrait ? (
+                            <button
+                                onClick={() => selfPortraitInputRef.current?.click()}
+                                className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl hover:border-red-500/30 hover:bg-red-500/5 transition-all flex flex-col items-center gap-2 text-slate-400 hover:text-red-400"
+                            >
+                                <Upload className="w-6 h-6" />
+                                <span className="text-sm">Upload your photo</span>
+                                <span className="text-xs text-slate-500">For inclusion in the thumbnail</span>
+                            </button>
+                        ) : (
+                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${selfPortrait.data}`}
+                                    alt={selfPortrait.name}
+                                    className="w-full h-32 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <button
+                                        onClick={() => selfPortraitInputRef.current?.click()}
+                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setSelfPortrait(null)}
+                                        className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+                                    <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> Your photo uploaded
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Style Reference Image */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <ImageIcon className="w-5 h-5 text-red-400" />
+                            Style Reference
+                            <span className="text-xs text-slate-500 font-normal">(Optional)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Upload another thumbnail or image as style inspiration
+                        </p>
+
+                        <input
+                            ref={styleReferenceInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleStyleReferenceUpload}
+                            className="hidden"
+                        />
+
+                        {!styleReference ? (
+                            <button
+                                onClick={() => styleReferenceInputRef.current?.click()}
+                                className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl hover:border-red-500/30 hover:bg-red-500/5 transition-all flex flex-col items-center gap-2 text-slate-400 hover:text-red-400"
+                            >
+                                <Upload className="w-6 h-6" />
+                                <span className="text-sm">Upload reference image</span>
+                                <span className="text-xs text-slate-500">For style & composition inspiration</span>
+                            </button>
+                        ) : (
+                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${styleReference.data}`}
+                                    alt={styleReference.name}
+                                    className="w-full h-32 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <button
+                                        onClick={() => styleReferenceInputRef.current?.click()}
+                                        className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setStyleReference(null)}
+                                        className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+                                    <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> Style reference uploaded
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Legacy Reference Images - Hidden by default, keeping for compatibility */}
+                    <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4 hidden">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <ImageIcon className="w-5 h-5 text-red-400" />
+                            Additional Reference Images
+                            <span className="text-xs text-slate-500 font-normal">(Optional - up to 2)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                            Upload images to use as reference or to edit/transform into a thumbnail
+                        </p>
+
+                        <input
+                            ref={referenceInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleReferenceImageUpload}
+                            className="hidden"
+                        />
+
+                        {referenceImages.length < 2 && (
+                            <button
+                                onClick={() => referenceInputRef.current?.click()}
+                                className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl hover:border-red-500/30 hover:bg-red-500/5 transition-all flex flex-col items-center gap-2 text-slate-400 hover:text-red-400"
+                            >
+                                <Upload className="w-6 h-6" />
+                                <span className="text-sm">Click to upload reference image</span>
+                                <span className="text-xs text-slate-500">{2 - referenceImages.length} slot{2 - referenceImages.length !== 1 ? 's' : ''} remaining</span>
+                            </button>
+                        )}
+
+                        {referenceImages.length > 0 && (
+                            <div className="grid grid-cols-2 gap-3">
+                                {referenceImages.map((img, idx) => (
+                                    <div key={idx} className="relative group rounded-lg overflow-hidden border border-white/10">
+                                        <img
+                                            src={`data:image/png;base64,${img.data}`}
+                                            alt={img.name}
+                                            className="w-full h-24 object-cover"
+                                        />
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <button
+                                                onClick={() => removeReferenceImage(idx)}
+                                                className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
+                                            <span className="text-xs text-slate-300 truncate block">{img.name}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Style Selection */}
@@ -793,6 +1407,23 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
 
                         {showAdvanced && (
                             <div className="space-y-4 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
+                                {/* AI Research */}
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                                    <div className="flex items-center gap-2">
+                                        <Search className="w-4 h-4 text-red-400" />
+                                        <div>
+                                            <span className="text-sm text-white font-medium">Use Viral Trend Research</span>
+                                            <p className="text-xs text-slate-400">AI analyzes current high-CTR thumbnails</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setUseViralResearch(!useViralResearch)}
+                                        className={`w-10 h-6 rounded-full transition-colors ${useViralResearch ? 'bg-red-500' : 'bg-slate-700'}`}
+                                    >
+                                        <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useViralResearch ? 'translate-x-5' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
                                 {/* Visual Elements */}
                                 <div className="space-y-3">
                                     <label className="text-xs text-slate-500">Visual Elements</label>
@@ -937,24 +1568,48 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                         )}
                     </div>
 
-                    {/* Generate Button */}
-                    <button
-                        onClick={() => generateThumbnail()}
-                        disabled={loading || !videoTitle}
-                        className="w-full py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-red-500/25 hover:shadow-red-500/40"
-                    >
-                        {loading && !batchMode ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                {loadingStage || 'Generating...'}
-                            </>
-                        ) : (
-                            <>
-                                <Wand2 className="w-5 h-5" />
-                                Generate Thumbnail
-                            </>
-                        )}
-                    </button>
+                    {/* Generate Buttons */}
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => generateThumbnail()}
+                            disabled={loading || !videoTitle}
+                            className="w-full py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-red-500/25 hover:shadow-red-500/40"
+                        >
+                            {loading && !batchMode && alternatives.length === 0 ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    {loadingStage || 'Generating...'}
+                                </>
+                            ) : (
+                                <>
+                                    <Wand2 className="w-5 h-5" />
+                                    Generate Thumbnail
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={() => generateMultipleVersions()}
+                            disabled={loading || !videoTitle}
+                            className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40"
+                        >
+                            {loading && alternatives.length > 0 ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    {loadingStage || 'Generating versions...'}
+                                </>
+                            ) : (
+                                <>
+                                    <Grid3X3 className="w-5 h-5" />
+                                    Generate {alternativeCount} Versions
+                                </>
+                            )}
+                        </button>
+
+                        <p className="text-xs text-slate-500 text-center">
+                            Generate multiple variations to find the perfect thumbnail
+                        </p>
+                    </div>
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400">
@@ -1027,8 +1682,8 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                     {/* Single View */}
                     {!loading && viewMode === 'single' && generatedImage && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                            <div className="rounded-2xl overflow-hidden border border-white/10 bg-slate-900/50">
-                                <img 
+                            <div className="rounded-2xl overflow-hidden border border-white/10 bg-slate-900/50 relative group">
+                                <img
                                     src={`data:image/png;base64,${generatedImage}`}
                                     alt="Generated Thumbnail"
                                     className="w-full h-auto"
@@ -1036,6 +1691,30 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                         filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
                                     }}
                                 />
+                                {/* Action Overlay */}
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                    <button
+                                        onClick={() => openModifyModal(generatedImage)}
+                                        className="px-4 py-2 bg-orange-500/90 hover:bg-orange-500 rounded-lg text-white text-sm font-bold flex items-center gap-2 transition-colors"
+                                    >
+                                        <Edit3 className="w-4 h-4" />
+                                        Modify
+                                    </button>
+                                    <button
+                                        onClick={() => openSendToVeoModal(generatedImage)}
+                                        className="px-4 py-2 bg-indigo-500/90 hover:bg-indigo-500 rounded-lg text-white text-sm font-bold flex items-center gap-2 transition-colors"
+                                    >
+                                        <Video className="w-4 h-4" />
+                                        Send to Veo3
+                                    </button>
+                                    <button
+                                        onClick={() => downloadThumbnail(generatedImage)}
+                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-bold flex items-center gap-2 transition-colors"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Download
+                                    </button>
+                                </div>
                             </div>
 
                             {/* CTR Score */}
@@ -1050,6 +1729,84 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                                     <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: '82%' }} />
                                 </div>
                                 <p className="text-xs text-slate-500 mt-2">Based on visual elements, contrast, and text placement</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Multiple Alternatives Grid */}
+                    {!loading && alternatives.length > 0 && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Grid3X3 className="w-5 h-5 text-red-400" />
+                                    Alternative Versions ({alternatives.filter(a => a.imageData).length}/{alternativeCount})
+                                </h3>
+                                <button
+                                    onClick={() => setAlternatives([])}
+                                    className="text-xs text-slate-500 hover:text-white"
+                                >
+                                    Clear All
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                                {alternatives.map((alt, idx) => (
+                                    <div key={alt.id} className="relative group rounded-xl overflow-hidden border border-white/10 bg-slate-900/50 aspect-video">
+                                        {alt.isGenerating ? (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
+                                            </div>
+                                        ) : alt.imageData ? (
+                                            <>
+                                                <img
+                                                    src={`data:image/png;base64,${alt.imageData}`}
+                                                    alt={alt.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                                {/* Hover Actions */}
+                                                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
+                                                    <span className="text-xs text-white font-bold">{alt.name}</span>
+                                                    <div className="flex gap-1">
+                                                        <button
+                                                            onClick={() => {
+                                                                setGeneratedImage(alt.imageData);
+                                                                setViewMode('single');
+                                                            }}
+                                                            className="p-1.5 bg-emerald-500/80 hover:bg-emerald-500 rounded text-white"
+                                                            title="Use this"
+                                                        >
+                                                            <Check className="w-3 h-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => openModifyModal(alt.imageData!)}
+                                                            className="p-1.5 bg-orange-500/80 hover:bg-orange-500 rounded text-white"
+                                                            title="Modify"
+                                                        >
+                                                            <Edit3 className="w-3 h-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => openSendToVeoModal(alt.imageData!)}
+                                                            className="p-1.5 bg-indigo-500/80 hover:bg-indigo-500 rounded text-white"
+                                                            title="Send to Veo3"
+                                                        >
+                                                            <Video className="w-3 h-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => downloadThumbnail(alt.imageData!, `thumbnail_v${idx + 1}`)}
+                                                            className="p-1.5 bg-white/20 hover:bg-white/30 rounded text-white"
+                                                            title="Download"
+                                                        >
+                                                            <Download className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="absolute inset-0 flex items-center justify-center text-slate-600">
+                                                <XCircle className="w-6 h-6" />
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
@@ -1129,7 +1886,7 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                     )}
 
                     {/* Empty State */}
-                    {!loading && !generatedImage && variants.length === 0 && (
+                    {!loading && !generatedImage && variants.length === 0 && alternatives.length === 0 && (
                         <div className="p-12 rounded-2xl bg-slate-900/50 border border-white/5 border-dashed flex flex-col items-center justify-center text-center">
                             <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4">
                                 <Youtube className="w-8 h-8 text-red-400" />
@@ -1142,6 +1899,185 @@ const YouTubeThumbnail: React.FC<YouTubeThumbnailProps> = ({ apiKey }) => {
                     )}
                 </div>
             </div>
+
+            {/* Modify Image Modal */}
+            {showModifyModal && modifyingImage && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Edit3 className="w-5 h-5 text-orange-400" />
+                                    Modify Image
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowModifyModal(false);
+                                        setModifyingImage(null);
+                                        setModifyPrompt('');
+                                    }}
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <X className="w-5 h-5 text-slate-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Preview Image */}
+                            <div className="rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${modifyingImage}`}
+                                    alt="Image to modify"
+                                    className="w-full h-auto"
+                                />
+                            </div>
+
+                            {/* Modification Prompt */}
+                            <div className="space-y-2">
+                                <label className="text-sm text-slate-400">How would you like to modify this image?</label>
+                                <textarea
+                                    value={modifyPrompt}
+                                    onChange={(e) => setModifyPrompt(e.target.value)}
+                                    placeholder="e.g., Make the background more vibrant, add a glow effect around the text, change the person's expression to more excited, add a red border..."
+                                    className="w-full h-32 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-500/50 resize-none"
+                                />
+                            </div>
+
+                            {/* Quick Suggestions */}
+                            <div className="flex flex-wrap gap-2">
+                                {['Add glow effect', 'More contrast', 'Change background', 'Add border', 'Brighter colors'].map(suggestion => (
+                                    <button
+                                        key={suggestion}
+                                        onClick={() => setModifyPrompt(prev => prev ? `${prev}, ${suggestion.toLowerCase()}` : suggestion)}
+                                        className="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
+                                    >
+                                        {suggestion}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => {
+                                        setShowModifyModal(false);
+                                        setModifyingImage(null);
+                                        setModifyPrompt('');
+                                    }}
+                                    className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-medium transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleModifyImage}
+                                    disabled={isModifying || !modifyPrompt.trim()}
+                                    className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-500/50 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    {isModifying ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Modifying...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Wand2 className="w-4 h-4" />
+                                            Apply Changes
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Send to Veo3 Director Modal */}
+            {showSendToVeoModal && sendingImageData && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-md w-full">
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Video className="w-5 h-5 text-indigo-400" />
+                                    Send to Veo3 Director
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowSendToVeoModal(false);
+                                        setSendingImageData(null);
+                                    }}
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <X className="w-5 h-5 text-slate-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Preview Image */}
+                            <div className="rounded-xl overflow-hidden border border-white/10">
+                                <img
+                                    src={`data:image/png;base64,${sendingImageData}`}
+                                    alt="Image to send"
+                                    className="w-full h-auto"
+                                />
+                            </div>
+
+                            {/* Position Selection */}
+                            <div className="space-y-3">
+                                <label className="text-sm text-slate-400">Use this image as:</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setVeoPosition('first')}
+                                        className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${
+                                            veoPosition === 'first'
+                                                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300'
+                                                : 'bg-slate-800/50 border-white/10 text-slate-400 hover:border-white/20'
+                                        }`}
+                                    >
+                                        <ArrowLeft className="w-6 h-6" />
+                                        <span className="text-sm font-medium">First Frame</span>
+                                        <span className="text-xs opacity-70">Opening image</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setVeoPosition('last')}
+                                        className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${
+                                            veoPosition === 'last'
+                                                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300'
+                                                : 'bg-slate-800/50 border-white/10 text-slate-400 hover:border-white/20'
+                                        }`}
+                                    >
+                                        <ArrowRight className="w-6 h-6" />
+                                        <span className="text-sm font-medium">Last Frame</span>
+                                        <span className="text-xs opacity-70">Ending image</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => {
+                                        setShowSendToVeoModal(false);
+                                        setSendingImageData(null);
+                                    }}
+                                    className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-medium transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={sendToVeoDirector}
+                                    className="flex-1 px-4 py-3 bg-indigo-500 hover:bg-indigo-600 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <Video className="w-4 h-4" />
+                                    Send to Veo3
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

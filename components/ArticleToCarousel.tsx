@@ -144,6 +144,11 @@ const ArticleToCarousel: React.FC = () => {
     const [showScheduler, setShowScheduler] = useState(false);
     const [scheduledDate, setScheduledDate] = useState('');
     const [scheduledTime, setScheduledTime] = useState('');
+
+    // Webhook State
+    const [sendingCarousel, setSendingCarousel] = useState(false);
+    const [sendSuccess, setSendSuccess] = useState(false);
+    const [sendError, setSendError] = useState<string | null>(null);
     
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -304,6 +309,72 @@ const ArticleToCarousel: React.FC = () => {
                 setTimeout(() => downloadSlide(slide.imageData!, idx), idx * 500);
             }
         });
+    };
+
+    // Helper function to convert base64 to Blob
+    const base64ToBlob = (base64: string, mimeType: string = 'image/png'): Blob => {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: mimeType });
+    };
+
+    const sendCarouselToWebhook = async () => {
+        if (!result) return;
+
+        setSendingCarousel(true);
+        setSendSuccess(false);
+        setSendError(null);
+
+        try {
+            // Extract hashtags from caption (words starting with #)
+            const hashtagRegex = /#\w+/g;
+            const hashtags = result.caption.match(hashtagRegex) || [];
+
+            // Create FormData to send binary images
+            const formData = new FormData();
+
+            // Add each slide image as binary data
+            result.slides.forEach((slide, idx) => {
+                if (slide.imageData) {
+                    const blob = base64ToBlob(slide.imageData, 'image/png');
+                    formData.append(`slide_${idx + 1}`, blob, `slide_${idx + 1}.png`);
+                }
+                // Add slide metadata
+                formData.append(`slide_${idx + 1}_title`, slide.title || '');
+                formData.append(`slide_${idx + 1}_content`, slide.content || '');
+                formData.append(`slide_${idx + 1}_order`, String(slide.order));
+            });
+
+            // Add other metadata
+            formData.append('caption', result.caption);
+            formData.append('hashtags', JSON.stringify(hashtags));
+            formData.append('platform', selectedPlatform.name);
+            formData.append('style', selectedStyle.name);
+            formData.append('totalSlides', String(result.slides.length));
+            formData.append('timestamp', new Date().toISOString());
+
+            // Send as multipart/form-data with binary images
+            const response = await fetch('http://localhost:5678/webhook-test/fe6cc4c0-b169-48dd-a42a-59afced8a456', {
+                method: 'POST',
+                mode: 'no-cors',
+                body: formData,
+            });
+
+            // With no-cors mode, response.ok will be false and response.type will be 'opaque'
+            // but the request is still sent successfully
+            setSendSuccess(true);
+            setTimeout(() => setSendSuccess(false), 3000);
+        } catch (err) {
+            console.error('Failed to send carousel to webhook:', err);
+            setSendError(err instanceof Error ? err.message : 'Failed to send carousel');
+            setTimeout(() => setSendError(null), 5000);
+        } finally {
+            setSendingCarousel(false);
+        }
     };
 
     const regenerateSlide = async (index: number) => {
@@ -733,6 +804,39 @@ const ArticleToCarousel: React.FC = () => {
                                     >
                                         <Download className="w-4 h-4" />
                                         Download All
+                                    </button>
+                                    <button
+                                        onClick={sendCarouselToWebhook}
+                                        disabled={sendingCarousel}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            sendSuccess
+                                                ? 'bg-emerald-500/20 text-emerald-300'
+                                                : sendError
+                                                    ? 'bg-red-500/20 text-red-300'
+                                                    : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                                        }`}
+                                    >
+                                        {sendingCarousel ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Sending...
+                                            </>
+                                        ) : sendSuccess ? (
+                                            <>
+                                                <Check className="w-4 h-4" />
+                                                Sent!
+                                            </>
+                                        ) : sendError ? (
+                                            <>
+                                                <AlertCircle className="w-4 h-4" />
+                                                Failed
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send className="w-4 h-4" />
+                                                Send Carousel
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </div>
