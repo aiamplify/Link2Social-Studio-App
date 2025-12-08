@@ -12,20 +12,28 @@ import { RepoFileTree, Citation, SocialPost, CarouselResult, CarouselSlide, Blog
 const getAiClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Robust retry logic for 503 Service Unavailable / Overloaded errors
-async function withRetry<T>(operation: () => Promise<T>, retries = 3, baseDelay = 3000): Promise<T> {
+async function withRetry<T>(operation: () => Promise<T>, retries = 5, baseDelay = 5000): Promise<T> {
   let lastError;
   for (let i = 0; i < retries; i++) {
     try {
       return await operation();
     } catch (error: any) {
       lastError = error;
-      // Check for 503 or "overloaded" message
-      const isOverloaded = error.status === 503 || error.code === 503 || 
-                           (error.message && error.message.toLowerCase().includes('overloaded'));
-      
+      // Check for 503 or "overloaded" message in various formats
+      const errorMessage = error.message || error.toString() || '';
+      const errorStatus = error.status || error.code || error.httpStatusCode;
+      const isOverloaded =
+        errorStatus === 503 ||
+        errorStatus === '503' ||
+        errorMessage.toLowerCase().includes('overloaded') ||
+        errorMessage.toLowerCase().includes('503') ||
+        errorMessage.toLowerCase().includes('unavailable') ||
+        errorMessage.toLowerCase().includes('capacity') ||
+        errorMessage.toLowerCase().includes('try again later');
+
       if (isOverloaded && i < retries - 1) {
-        const delay = baseDelay * Math.pow(2, i); // Exponential backoff: 3s, 6s, 12s
-        console.warn(`Gemini Model Overloaded (Attempt ${i + 1}/${retries}). Retrying in ${delay}ms...`);
+        const delay = baseDelay * Math.pow(2, i); // Exponential backoff: 5s, 10s, 20s, 40s, 80s
+        console.warn(`Gemini Model Overloaded (Attempt ${i + 1}/${retries}). Retrying in ${delay / 1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }

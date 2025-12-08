@@ -1,14 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { google } from 'googleapis';
-import { Readable } from 'stream';
+import https from 'https';
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
-
-// Google Drive folder ID extracted from the shared link
-// https://drive.google.com/drive/folders/1JwZpIeObLGltjseDpQowm7mDmhlveCPf
-const GOOGLE_DRIVE_FOLDER_ID = '1JwZpIeObLGltjseDpQowm7mDmhlveCPf';
 
 // Google Sheets ID extracted from the shared link
 // https://docs.google.com/spreadsheets/d/1jMk9ARf0kj7EJ-1ds-RuU92cG_1W7WaNx6TdYJvU-aU
@@ -17,13 +13,99 @@ const GOOGLE_SHEET_ID = '1jMk9ARf0kj7EJ-1ds-RuU92cG_1W7WaNx6TdYJvU-aU';
 // Sheet name (first sheet by default)
 const SHEET_NAME = 'Sheet1';
 
+// ImgBB API for hosting images (same as Instagram integration)
+const IMGBB_API_KEY = '74b6c0a4993129181bf3413ee86029e2';
+
+// =============================================================================
+// HTTPS REQUEST HELPER
+// =============================================================================
+
+function makeRequest(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: string
+): Promise<{ statusCode: number; data: string }> {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+
+        const finalHeaders = { ...headers };
+        if (body) {
+            finalHeaders['Content-Length'] = Buffer.byteLength(body, 'utf8').toString();
+        }
+
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method,
+            headers: finalHeaders,
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve({ statusCode: res.statusCode || 500, data }));
+        });
+
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
+// =============================================================================
+// IMGBB IMAGE UPLOAD
+// =============================================================================
+
+/**
+ * Upload image to ImgBB and return the URL
+ * This avoids the Google Drive service account storage quota issue
+ */
+async function uploadToImgBB(base64Image: string): Promise<string | null> {
+    if (!IMGBB_API_KEY) {
+        throw new Error('ImgBB API key not configured');
+    }
+
+    try {
+        // Remove data URL prefix if present
+        const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+
+        const body = `key=${IMGBB_API_KEY}&image=${encodeURIComponent(base64Data)}`;
+
+        const response = await makeRequest(
+            'https://api.imgbb.com/1/upload',
+            'POST',
+            {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body
+        );
+
+        console.log('ImgBB response:', response.statusCode);
+
+        if (response.statusCode !== 200) {
+            console.error('ImgBB upload failed:', response.data);
+            throw new Error('Failed to upload image to ImgBB');
+        }
+
+        const data = JSON.parse(response.data);
+        // Use the display_url which is more reliable
+        const imageUrl = data.data?.display_url || data.data?.url;
+        console.log('ImgBB image URL:', imageUrl);
+        return imageUrl || null;
+    } catch (error) {
+        console.error('ImgBB upload error:', error);
+        throw error;
+    }
+}
+
 // =============================================================================
 // GOOGLE AUTH SETUP
 // =============================================================================
 
 /**
  * Creates a Google Auth client using service account credentials
- * Credentials should be stored in environment variables
+ * Only needs Sheets scope now (no Drive needed)
  */
 function getGoogleAuthClient() {
     // Service account credentials from environment variables
@@ -48,75 +130,11 @@ function getGoogleAuthClient() {
     const auth = new google.auth.GoogleAuth({
         credentials,
         scopes: [
-            'https://www.googleapis.com/auth/drive.file',
             'https://www.googleapis.com/auth/spreadsheets',
         ],
     });
 
     return auth;
-}
-
-// =============================================================================
-// GOOGLE DRIVE FUNCTIONS
-// =============================================================================
-
-/**
- * Uploads an image to Google Drive and returns the shareable link
- */
-async function uploadImageToDrive(
-    imageBase64: string,
-    fileName: string
-): Promise<string> {
-    const auth = getGoogleAuthClient();
-    const drive = google.drive({ version: 'v3', auth });
-
-    // Remove data URL prefix if present
-    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-    // Convert base64 to buffer
-    const imageBuffer = Buffer.from(base64Data, 'base64');
-
-    // Create a readable stream from the buffer
-    const stream = new Readable();
-    stream.push(imageBuffer);
-    stream.push(null);
-
-    // Upload file to Google Drive
-    const fileMetadata = {
-        name: fileName,
-        parents: [GOOGLE_DRIVE_FOLDER_ID],
-    };
-
-    const media = {
-        mimeType: 'image/png',
-        body: stream,
-    };
-
-    const response = await drive.files.create({
-        requestBody: fileMetadata,
-        media: media,
-        fields: 'id, webViewLink',
-    });
-
-    const fileId = response.data.id;
-
-    if (!fileId) {
-        throw new Error('Failed to get file ID from Google Drive upload');
-    }
-
-    // Make the file publicly accessible (or at least viewable with link)
-    await drive.permissions.create({
-        fileId: fileId,
-        requestBody: {
-            role: 'reader',
-            type: 'anyone',
-        },
-    });
-
-    // Get the shareable link
-    const fileLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
-
-    return fileLink;
 }
 
 // =============================================================================
@@ -182,7 +200,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             return res.status(200).json({
                 configured: hasCredentials,
-                driveFolderId: GOOGLE_DRIVE_FOLDER_ID,
                 sheetId: GOOGLE_SHEET_ID,
             });
         } catch (error) {
@@ -219,14 +236,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
-        // Generate filename with timestamp and platform
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const fileName = `social_post_${platform}_${timestamp}.png`;
+        // 1. Upload image to ImgBB (instead of Google Drive)
+        console.log('Uploading image to ImgBB...');
+        const imageUrl = await uploadToImgBB(imageBase64);
 
-        // 1. Upload image to Google Drive
-        console.log('Uploading image to Google Drive...');
-        const driveFileUrl = await uploadImageToDrive(imageBase64, fileName);
-        console.log('Image uploaded:', driveFileUrl);
+        if (!imageUrl) {
+            return res.status(400).json({
+                success: false,
+                message: 'Failed to upload image. Please try again.',
+            });
+        }
+        console.log('Image uploaded:', imageUrl);
 
         // 2. Prepare the caption with hashtags if provided
         const fullCaption = hashtags ? `${caption}\n\n${hashtags}` : caption;
@@ -238,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.log('Appending row to Google Sheet...');
         const rowNumber = await appendRowToSheet(
             postTitle,
-            driveFileUrl,
+            imageUrl,
             fullCaption,
             status || 'Ready to Post'
         );
@@ -247,7 +267,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({
             success: true,
             message: `Successfully exported to Google Sheets (Row ${rowNumber})`,
-            driveFileUrl,
+            driveFileUrl: imageUrl, // Return ImgBB URL (kept same field name for compatibility)
             sheetRowNumber: rowNumber,
         });
     } catch (error) {
