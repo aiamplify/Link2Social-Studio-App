@@ -530,7 +530,15 @@ const ArticleToCarousel: React.FC = () => {
                                     onChange={(e) => setSlideCount(parseInt(e.target.value))}
                                     className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-sky-500/50"
                                 >
-                                    {SLIDE_COUNT_OPTIONS.filter(n => n <= selectedPlatform.maxSlides).map(num => (
+                                    {SLIDE_COUNT_OPTIONS.filter(n => {
+                                        // Get the minimum maxSlides across selected platforms
+                                        const minMaxSlides = selectedPlatforms.length > 0
+                                            ? Math.min(...selectedPlatforms.map(id =>
+                                                PLATFORM_CONFIGS.find(p => p.id === id)?.maxSlides || 10
+                                              ))
+                                            : 10;
+                                        return n <= minMaxSlides;
+                                    }).map(num => (
                                         <option key={num} value={num}>{num} Slides</option>
                                     ))}
                                 </select>
@@ -1056,7 +1064,11 @@ const ArticleToCarousel: React.FC = () => {
                             </div>
                             <h3 className="text-xl font-bold text-white mb-2">Ready to Create</h3>
                             <p className="text-slate-500 max-w-md">
-                                Enter a URL, topic, or upload an image to generate a stunning carousel for {selectedPlatform.name}.
+                                Enter a URL, topic, or upload an image to generate a stunning carousel for {
+                                    selectedPlatforms.length > 0
+                                        ? selectedPlatforms.map(id => PLATFORM_CONFIGS.find(p => p.id === id)?.name).join(', ')
+                                        : 'your selected platforms'
+                                }.
                             </p>
                         </div>
                     )}
