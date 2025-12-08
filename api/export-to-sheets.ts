@@ -164,7 +164,7 @@ async function appendRowToSheet(
     title: string,
     mediaUrl: string,
     caption: string,
-    status: string = 'Ready to Post'
+    status: string = 'Posted'
 ): Promise<number> {
     const auth = getGoogleAuthClient();
     const sheets = google.sheets({ version: 'v4', auth });
@@ -280,7 +280,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             postTitle,
             imageUrl,
             fullCaption,
-            status || 'Ready to Post'
+            status || 'Posted'
         );
         console.log('Row added at:', rowNumber);
 

@@ -471,7 +471,7 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                 hashtags,
                 platform,
                 imageBase64: imageData,
-                status: 'Ready to Post',
+                status: 'Posted',
             });
 
             setSheetsExportResults(prev => [...prev, {
