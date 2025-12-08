@@ -4,10 +4,10 @@ import https from 'https';
 
 // Hardcoded credentials (private repo, single user)
 const TWITTER_CREDENTIALS = {
-  apiKey: 'ad9Nxpyud2BBcxs6JKl6DjMWd',
-  apiSecret: 'kOprhIQtyjAcr3sxrNzuZHP1F3Bdr0D1toCAk894GhI4NX1Bm6',
-  accessToken: '1759762781132267520-UjJkSfF9ss9djNHXIRoGBMOE5gRNc1',
-  accessTokenSecret: 'lzjTcrht8AxIYK7znolnE9JFdAIguy2EVIL9MQIjIPaS3',
+  apiKey: 'am6lGOEaQsNwA5xq1paJlapy7',
+  apiSecret: 'VWSZ1q6YOC6hmz0pqzQUpPiiUhi9wvhdC6d837jxVOmisHCvi5',
+  accessToken: '1759762781132267520-1l3PHRog5pdY1LQMa0zTBWqmHPffl1',
+  accessTokenSecret: '6cCj6cXzRfmEqpwBWwQcr5UPib4xOWkK6MJ4UdwkXefTs',
 };
 
 interface TwitterMediaUploadResponse {
