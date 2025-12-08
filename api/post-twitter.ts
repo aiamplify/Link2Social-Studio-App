@@ -5,8 +5,8 @@ import crypto from 'crypto';
 const TWITTER_CREDENTIALS = {
     apiKey: 'ad9Nxpyud2BBcxs6JKl6DjMWd',
     apiKeySecret: 'kOprhIQtyjAcr3sxrNzuZHP1F3Bdr0D1toCAk894GhI4NX1Bm6',
-    accessToken: '1759762781132267520-WavUIq5G7oGcPWUTaWNdmFXpL4eY5P',
-    accessTokenSecret: 'L3yBPHU63pTtJpCPIJMdxIQub4amkgjXxM53WAOonztN0',
+    accessToken: '1759762781132267520-2Vtr7pXY2xjyxCddMXzMe9EMchjwBP',
+    accessTokenSecret: 'D3ELzBIIuOQYpqoBDzbiLY5jdWX4hontlMWS3DCyovtyl',
 };
 
 function generateNonce(): string {
