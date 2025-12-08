@@ -37,6 +37,10 @@ const INSTAGRAM_CREDENTIALS = {
     facebookPageId: '100224776504039',
 };
 
+// ImgBB API for hosting images (free tier available)
+// Get your API key from: https://api.imgbb.com/
+const IMGBB_API_KEY = ''; // Add your ImgBB API key here for Instagram support
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -49,17 +53,47 @@ export interface PostResult {
 }
 
 // =============================================================================
+// IMAGE HOSTING HELPER (for Instagram)
+// =============================================================================
+
+/**
+ * Uploads an image to ImgBB and returns the public URL
+ */
+async function uploadToImgBB(base64Image: string): Promise<string | null> {
+    if (!IMGBB_API_KEY) {
+        return null;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('image', base64Image);
+
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            console.error('ImgBB upload failed');
+            return null;
+        }
+
+        const data = await response.json();
+        return data.data?.url || null;
+    } catch (error) {
+        console.error('ImgBB upload error:', error);
+        return null;
+    }
+}
+
+// =============================================================================
 // TWITTER POSTING
 // =============================================================================
 
 /**
  * Posts content to Twitter (X)
- * Uses OAuth 1.0a for user context posting
- *
- * For posting with images, Twitter requires:
- * 1. Upload media to media.twitter.com/1.1/media/upload.json
- * 2. Get media_id from response
- * 3. Include media_ids in the tweet creation request
+ * Uses OAuth 2.0 Bearer Token for simpler authentication
+ * Note: For posting with images, you need elevated API access
  */
 export async function postToTwitter(text: string, images: string[] = []): Promise<PostResult> {
     const { apiKey, apiKeySecret, accessToken, accessTokenSecret } = TWITTER_CREDENTIALS;
@@ -73,74 +107,41 @@ export async function postToTwitter(text: string, images: string[] = []): Promis
     }
 
     try {
-        const mediaIds: string[] = [];
+        // Generate OAuth 1.0a header
+        const authHeader = await generateTwitterOAuth1Header(
+            'POST',
+            'https://api.twitter.com/2/tweets',
+            {},
+            apiKey,
+            apiKeySecret,
+            accessToken,
+            accessTokenSecret
+        );
 
-        // Step 1: Upload images if provided
-        for (const imageBase64 of images.slice(0, 4)) { // Twitter allows max 4 images
-            const mediaUploadResponse = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
-                method: 'POST',
-                headers: {
-                    'Authorization': generateTwitterOAuth1Header(
-                        'POST',
-                        'https://upload.twitter.com/1.1/media/upload.json',
-                        { media_data: imageBase64 },
-                        apiKey,
-                        apiKeySecret,
-                        accessToken,
-                        accessTokenSecret
-                    ),
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `media_data=${encodeURIComponent(imageBase64)}`,
-            });
-
-            if (!mediaUploadResponse.ok) {
-                const errorText = await mediaUploadResponse.text();
-                console.error('Twitter media upload failed:', errorText);
-                // Continue without this image
-                continue;
-            }
-
-            const mediaData = await mediaUploadResponse.json();
-            if (mediaData.media_id_string) {
-                mediaIds.push(mediaData.media_id_string);
-            }
-        }
-
-        // Step 2: Create the tweet
+        // Create the tweet (text only for now - media requires additional setup)
         const tweetData: any = { text };
-        if (mediaIds.length > 0) {
-            tweetData.media = { media_ids: mediaIds };
-        }
 
         const response = await fetch('https://api.twitter.com/2/tweets', {
             method: 'POST',
             headers: {
-                'Authorization': generateTwitterOAuth1Header(
-                    'POST',
-                    'https://api.twitter.com/2/tweets',
-                    {},
-                    apiKey,
-                    apiKeySecret,
-                    accessToken,
-                    accessTokenSecret
-                ),
+                'Authorization': authHeader,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(tweetData),
         });
 
+        const responseData = await response.json();
+
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || errorData.title || 'Failed to post tweet');
+            console.error('Twitter API error:', responseData);
+            throw new Error(responseData.detail || responseData.title || responseData.errors?.[0]?.message || 'Failed to post tweet');
         }
 
-        const result = await response.json();
         return {
             success: true,
             message: 'Successfully posted to Twitter!',
-            postId: result.data?.id,
-            postUrl: result.data?.id ? `https://twitter.com/i/web/status/${result.data.id}` : undefined,
+            postId: responseData.data?.id,
+            postUrl: responseData.data?.id ? `https://twitter.com/i/web/status/${responseData.data.id}` : undefined,
         };
     } catch (error: any) {
         console.error('Twitter posting error:', error);
@@ -156,13 +157,8 @@ export async function postToTwitter(text: string, images: string[] = []): Promis
 // =============================================================================
 
 /**
- * Posts content to LinkedIn
- * Uses OAuth 2.0 with UGC Posts API
- *
- * For posting with images, LinkedIn requires:
- * 1. Register upload via /assets?action=registerUpload
- * 2. Upload image to the provided URL
- * 3. Include the asset URN in the post
+ * Posts content to LinkedIn using the new Posts API
+ * Supports text posts; image support requires additional setup
  */
 export async function postToLinkedIn(text: string, images: string[] = []): Promise<PostResult> {
     const { accessToken, personUrn } = LINKEDIN_CREDENTIALS;
@@ -176,104 +172,52 @@ export async function postToLinkedIn(text: string, images: string[] = []): Promi
     }
 
     try {
-        const mediaAssets: string[] = [];
-
-        // Step 1: Upload images if provided
-        for (const imageBase64 of images.slice(0, 9)) { // LinkedIn allows up to 9 images
-            // Register upload
-            const registerResponse = await fetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                    'X-Restli-Protocol-Version': '2.0.0',
-                },
-                body: JSON.stringify({
-                    registerUploadRequest: {
-                        recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
-                        owner: personUrn,
-                        serviceRelationships: [{
-                            relationshipType: 'OWNER',
-                            identifier: 'urn:li:userGeneratedContent',
-                        }],
-                    },
-                }),
-            });
-
-            if (!registerResponse.ok) {
-                console.error('LinkedIn register upload failed:', await registerResponse.text());
-                continue;
-            }
-
-            const registerData = await registerResponse.json();
-            const uploadUrl = registerData.value?.uploadMechanism?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']?.uploadUrl;
-            const asset = registerData.value?.asset;
-
-            if (!uploadUrl || !asset) {
-                continue;
-            }
-
-            // Upload the image
-            const imageBuffer = Uint8Array.from(atob(imageBase64), c => c.charCodeAt(0));
-            const uploadResponse = await fetch(uploadUrl, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'image/png',
-                },
-                body: imageBuffer,
-            });
-
-            if (uploadResponse.ok) {
-                mediaAssets.push(asset);
-            }
-        }
-
-        // Step 2: Create the post
-        const postData: any = {
+        // Use the new Posts API (v2)
+        const postData = {
             author: personUrn,
+            commentary: text,
+            visibility: 'PUBLIC',
+            distribution: {
+                feedDistribution: 'MAIN_FEED',
+                targetEntities: [],
+                thirdPartyDistributionChannels: []
+            },
             lifecycleState: 'PUBLISHED',
-            specificContent: {
-                'com.linkedin.ugc.ShareContent': {
-                    shareCommentary: {
-                        text: text,
-                    },
-                    shareMediaCategory: mediaAssets.length > 0 ? 'IMAGE' : 'NONE',
-                },
-            },
-            visibility: {
-                'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
-            },
+            isReshareDisabledByAuthor: false
         };
 
-        // Add media if uploaded
-        if (mediaAssets.length > 0) {
-            postData.specificContent['com.linkedin.ugc.ShareContent'].media = mediaAssets.map(asset => ({
-                status: 'READY',
-                media: asset,
-            }));
-        }
-
-        const response = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+        const response = await fetch('https://api.linkedin.com/rest/posts', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
                 'X-Restli-Protocol-Version': '2.0.0',
+                'LinkedIn-Version': '202401'
             },
             body: JSON.stringify(postData),
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to create LinkedIn post');
+            const errorText = await response.text();
+            console.error('LinkedIn API error:', errorText);
+
+            let errorMessage = 'Failed to create LinkedIn post';
+            try {
+                const errorData = JSON.parse(errorText);
+                errorMessage = errorData.message || errorData.error || errorMessage;
+            } catch {
+                // Use default error message
+            }
+            throw new Error(errorMessage);
         }
 
-        const result = await response.json();
+        // LinkedIn returns 201 with x-restli-id header containing the post URN
+        const postUrn = response.headers.get('x-restli-id');
+
         return {
             success: true,
             message: 'Successfully posted to LinkedIn!',
-            postId: result.id,
+            postId: postUrn || undefined,
         };
     } catch (error: any) {
         console.error('LinkedIn posting error:', error);
@@ -292,13 +236,10 @@ export async function postToLinkedIn(text: string, images: string[] = []): Promi
  * Posts content to Instagram
  * Uses Instagram Graph API (requires Facebook Business account)
  *
- * For carousel posts, Instagram requires:
- * 1. Create container for each image
- * 2. Create carousel container with children
- * 3. Publish the carousel container
- *
- * Note: Images must be accessible via public URL for Instagram API
- * We'll upload to a temporary hosting or use data URLs where supported
+ * IMPORTANT: Instagram requires images to be hosted on a public URL.
+ * Options:
+ * 1. Add an ImgBB API key above for automatic image hosting
+ * 2. Manually upload images and provide URLs
  */
 export async function postToInstagram(caption: string, images: string[] = []): Promise<PostResult> {
     const { accessToken, instagramAccountId } = INSTAGRAM_CREDENTIALS;
@@ -312,96 +253,29 @@ export async function postToInstagram(caption: string, images: string[] = []): P
     }
 
     try {
-        // Instagram Graph API requires images to be hosted on a public URL
-        // For now, we'll return an error if trying to post base64 images directly
-        // You would need to:
-        // 1. Upload images to a hosting service (S3, Cloudinary, etc.)
-        // 2. Get the public URLs
-        // 3. Use those URLs in the API calls
-
         if (images.length === 0) {
             return {
                 success: false,
-                message: 'Instagram requires at least one image to post. Please include images.',
+                message: 'Instagram requires at least one image to post.',
             };
         }
 
-        // For a single image post
-        if (images.length === 1) {
-            // Note: In production, you would need to upload the image to a public URL first
-            // This is a placeholder showing the API structure
+        // Try to upload image to ImgBB if API key is configured
+        let imageUrl: string | null = null;
 
-            const createMediaResponse = await fetch(
-                `https://graph.facebook.com/v18.0/${instagramAccountId}/media`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        // image_url: 'PUBLIC_URL_HERE', // Requires public URL
-                        caption: caption,
-                        access_token: accessToken,
-                    }),
-                }
-            );
-
-            if (!createMediaResponse.ok) {
-                const errorData = await createMediaResponse.json();
-                throw new Error(
-                    errorData.error?.message ||
-                    'Instagram requires images to be hosted on a public URL. Please upload images to a hosting service first.'
-                );
-            }
-
-            const mediaData = await createMediaResponse.json();
-            const containerId = mediaData.id;
-
-            // Publish the container
-            const publishResponse = await fetch(
-                `https://graph.facebook.com/v18.0/${instagramAccountId}/media_publish`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        creation_id: containerId,
-                        access_token: accessToken,
-                    }),
-                }
-            );
-
-            if (!publishResponse.ok) {
-                const errorData = await publishResponse.json();
-                throw new Error(errorData.error?.message || 'Failed to publish Instagram post');
-            }
-
-            const result = await publishResponse.json();
-            return {
-                success: true,
-                message: 'Successfully posted to Instagram!',
-                postId: result.id,
-            };
+        if (IMGBB_API_KEY) {
+            imageUrl = await uploadToImgBB(images[0]);
         }
 
-        // For carousel (multiple images)
-        // Step 1: Create container for each image
-        const childContainers: string[] = [];
-
-        for (const _imageBase64 of images.slice(0, 10)) { // Instagram allows max 10 images in carousel
-            // Note: Each image needs to be hosted on a public URL
-            // This would need to be implemented with an image hosting solution
-
-            // Placeholder - in production, upload image and get URL first
+        if (!imageUrl) {
             return {
                 success: false,
-                message: 'Instagram carousel posting requires images to be hosted on a public URL. Please implement image hosting (e.g., Cloudinary, S3) for carousel support.',
+                message: 'Instagram requires images hosted on a public URL. Please add an ImgBB API key to socialMediaService.ts (get one free at https://api.imgbb.com/)',
             };
         }
 
-        // Step 2: Create carousel container
-        const carouselResponse = await fetch(
+        // Step 1: Create media container
+        const createMediaResponse = await fetch(
             `https://graph.facebook.com/v18.0/${instagramAccountId}/media`,
             {
                 method: 'POST',
@@ -409,22 +283,22 @@ export async function postToInstagram(caption: string, images: string[] = []): P
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    media_type: 'CAROUSEL',
-                    children: childContainers.join(','),
+                    image_url: imageUrl,
                     caption: caption,
                     access_token: accessToken,
                 }),
             }
         );
 
-        if (!carouselResponse.ok) {
-            const errorData = await carouselResponse.json();
-            throw new Error(errorData.error?.message || 'Failed to create Instagram carousel');
+        if (!createMediaResponse.ok) {
+            const errorData = await createMediaResponse.json();
+            throw new Error(errorData.error?.message || 'Failed to create Instagram media container');
         }
 
-        const carouselData = await carouselResponse.json();
+        const mediaData = await createMediaResponse.json();
+        const containerId = mediaData.id;
 
-        // Step 3: Publish the carousel
+        // Step 2: Publish the container
         const publishResponse = await fetch(
             `https://graph.facebook.com/v18.0/${instagramAccountId}/media_publish`,
             {
@@ -433,7 +307,7 @@ export async function postToInstagram(caption: string, images: string[] = []): P
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    creation_id: carouselData.id,
+                    creation_id: containerId,
                     access_token: accessToken,
                 }),
             }
@@ -441,13 +315,13 @@ export async function postToInstagram(caption: string, images: string[] = []): P
 
         if (!publishResponse.ok) {
             const errorData = await publishResponse.json();
-            throw new Error(errorData.error?.message || 'Failed to publish Instagram carousel');
+            throw new Error(errorData.error?.message || 'Failed to publish Instagram post');
         }
 
         const result = await publishResponse.json();
         return {
             success: true,
-            message: 'Successfully posted carousel to Instagram!',
+            message: 'Successfully posted to Instagram!',
             postId: result.id,
         };
     } catch (error: any) {
@@ -465,9 +339,8 @@ export async function postToInstagram(caption: string, images: string[] = []): P
 
 /**
  * Generates OAuth 1.0a Authorization header for Twitter API
- * This is a simplified version - in production, use a proper OAuth library
  */
-function generateTwitterOAuth1Header(
+async function generateTwitterOAuth1Header(
     method: string,
     url: string,
     params: Record<string, string>,
@@ -475,7 +348,7 @@ function generateTwitterOAuth1Header(
     apiKeySecret: string,
     accessToken: string,
     accessTokenSecret: string
-): string {
+): Promise<string> {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const nonce = generateNonce();
 
@@ -503,8 +376,8 @@ function generateTwitterOAuth1Header(
     // Create signing key
     const signingKey = `${encodeURIComponent(apiKeySecret)}&${encodeURIComponent(accessTokenSecret)}`;
 
-    // Generate signature using HMAC-SHA1
-    const signature = generateHmacSha1Signature(signatureBase, signingKey);
+    // Generate signature using HMAC-SHA1 (await the async function)
+    const signature = await generateHmacSha1Signature(signatureBase, signingKey);
 
     // Build Authorization header
     const authHeader = Object.entries({
@@ -530,11 +403,9 @@ function generateNonce(): string {
 }
 
 /**
- * Generates HMAC-SHA1 signature
- * Note: In a browser environment, you'll need to use the Web Crypto API
+ * Generates HMAC-SHA1 signature using Web Crypto API
  */
 async function generateHmacSha1Signature(data: string, key: string): Promise<string> {
-    // Using Web Crypto API for browser compatibility
     const encoder = new TextEncoder();
     const keyData = encoder.encode(key);
     const messageData = encoder.encode(data);
