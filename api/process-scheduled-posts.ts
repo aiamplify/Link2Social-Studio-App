@@ -5,39 +5,38 @@
  * 1. Check for posts that are due (scheduled_at <= now && status = 'scheduled')
  * 2. Post them to the respective social media platforms
  * 3. Update their status to 'posted' or 'failed'
- *
- * Configure in vercel.json to run every minute:
- * {
- *   "crons": [{
- *     "path": "/api/process-scheduled-posts",
- *     "schedule": "* * * * *"
- *   }]
- * }
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 // Initialize Supabase client
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Twitter credentials
-const TWITTER_API_KEY = 'uqJFp7GDCMhmvgTwfKh7qbeMr';
-const TWITTER_API_SECRET = 'KH7oXhQh7NGYgJHs91gEJzSgPPZTMqv7EnJZT2JE9OQZHA5eL2';
-const TWITTER_ACCESS_TOKEN = '1867686942067740672-xhGx79Qma8rVOoGBPCPWW34Bw2DXHQ';
-const TWITTER_ACCESS_SECRET = 'wFnBWSsqWdH8d5BmvhyGt0tIjy1dSHp1KIKnKOV3jmCrS';
+// Twitter credentials from environment variables
+const TWITTER_CREDENTIALS = {
+    apiKey: process.env.TWITTER_API_KEY || '',
+    apiSecret: process.env.TWITTER_API_SECRET || '',
+    accessToken: process.env.TWITTER_ACCESS_TOKEN || '',
+    accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET || '',
+};
 
-// LinkedIn credentials
-const LINKEDIN_ACCESS_TOKEN = 'AQXi-WYGrYdxBqxjIyaL3s4mfGIq6FdNgVkXdTgFxHhQHaM7BXdKxS8WXxGzNnN8XxXxX';
+// LinkedIn credentials from environment variables
+const LINKEDIN_CREDENTIALS = {
+    accessToken: process.env.LINKEDIN_ACCESS_TOKEN || '',
+};
 
-// Instagram credentials
-const INSTAGRAM_ACCESS_TOKEN = 'IGAAJOqgCWhZAAZAzBASHVKTDlFaWJKT3ZAabU5PbkhxX0';
-const INSTAGRAM_ACCOUNT_ID = '17841400000000000';
+// Instagram credentials from environment variables
+const INSTAGRAM_CREDENTIALS = {
+    accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || '',
+    accountId: process.env.INSTAGRAM_ACCOUNT_ID || '',
+};
 
-// ImgBB API key for Instagram image hosting
-const IMGBB_API_KEY = '8a0f1b2c3d4e5f6g7h8i9j0k';
+// ImgBB API key for image hosting
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY || '';
 
 interface CalendarPost {
     id: string;
@@ -59,67 +58,79 @@ interface PostResult {
 
 // ==================== TWITTER POSTING ====================
 
+function generateOAuthSignature(
+    method: string,
+    url: string,
+    params: Record<string, string>
+): string {
+    const oauthParams: Record<string, string> = {
+        oauth_consumer_key: TWITTER_CREDENTIALS.apiKey,
+        oauth_token: TWITTER_CREDENTIALS.accessToken,
+        oauth_signature_method: 'HMAC-SHA1',
+        oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+        oauth_nonce: crypto.randomBytes(16).toString('hex'),
+        oauth_version: '1.0',
+        ...params,
+    };
+
+    const sortedKeys = Object.keys(oauthParams).sort();
+    const paramString = sortedKeys
+        .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(oauthParams[key])}`)
+        .join('&');
+
+    const signatureBaseString = [
+        method.toUpperCase(),
+        encodeURIComponent(url),
+        encodeURIComponent(paramString),
+    ].join('&');
+
+    const signingKey = `${encodeURIComponent(TWITTER_CREDENTIALS.apiSecret)}&${encodeURIComponent(TWITTER_CREDENTIALS.accessTokenSecret)}`;
+    const signature = crypto.createHmac('sha1', signingKey).update(signatureBaseString).digest('base64');
+
+    return signature;
+}
+
+function generateOAuthHeader(method: string, url: string, params: Record<string, string> = {}): string {
+    const oauthParams: Record<string, string> = {
+        oauth_consumer_key: TWITTER_CREDENTIALS.apiKey,
+        oauth_token: TWITTER_CREDENTIALS.accessToken,
+        oauth_signature_method: 'HMAC-SHA1',
+        oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+        oauth_nonce: crypto.randomBytes(16).toString('hex'),
+        oauth_version: '1.0',
+    };
+
+    const allParams = { ...oauthParams, ...params };
+    oauthParams.oauth_signature = generateOAuthSignature(method, url, allParams);
+
+    const headerParams = Object.keys(oauthParams)
+        .sort()
+        .map((key) => `${encodeURIComponent(key)}="${encodeURIComponent(oauthParams[key])}"`)
+        .join(', ');
+
+    return `OAuth ${headerParams}`;
+}
+
 async function postToTwitter(text: string, images: string[]): Promise<PostResult> {
     try {
-        const crypto = await import('crypto');
-
-        // Helper to generate OAuth signature
-        function generateOAuthSignature(
-            method: string,
-            url: string,
-            params: Record<string, string>,
-            consumerSecret: string,
-            tokenSecret: string
-        ): string {
-            const sortedParams = Object.keys(params).sort().map(key =>
-                `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`
-            ).join('&');
-
-            const signatureBase = `${method.toUpperCase()}&${encodeURIComponent(url)}&${encodeURIComponent(sortedParams)}`;
-            const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`;
-
-            return crypto.createHmac('sha1', signingKey).update(signatureBase).digest('base64');
+        if (!TWITTER_CREDENTIALS.apiKey) {
+            return { success: false, message: 'Twitter credentials not configured' };
         }
 
-        // Helper to generate OAuth header
-        function generateOAuthHeader(
-            method: string,
-            url: string,
-            extraParams: Record<string, string> = {}
-        ): string {
-            const oauthParams: Record<string, string> = {
-                oauth_consumer_key: TWITTER_API_KEY,
-                oauth_nonce: crypto.randomBytes(16).toString('hex'),
-                oauth_signature_method: 'HMAC-SHA1',
-                oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-                oauth_token: TWITTER_ACCESS_TOKEN,
-                oauth_version: '1.0'
-            };
-
-            const allParams = { ...oauthParams, ...extraParams };
-            oauthParams.oauth_signature = generateOAuthSignature(
-                method, url, allParams, TWITTER_API_SECRET, TWITTER_ACCESS_SECRET
-            );
-
-            return 'OAuth ' + Object.keys(oauthParams).sort().map(key =>
-                `${encodeURIComponent(key)}="${encodeURIComponent(oauthParams[key])}"`
-            ).join(', ');
-        }
-
-        // Upload media if images provided
         const mediaIds: string[] = [];
-        for (const imageBase64 of images.slice(0, 4)) { // Max 4 images
+
+        // Upload images if provided (max 4)
+        for (const imageBase64 of images.slice(0, 4)) {
             const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
             const mediaUrl = 'https://upload.twitter.com/1.1/media/upload.json';
-            const mediaParams = { media_data: cleanBase64 };
 
             const mediaResponse = await fetch(mediaUrl, {
                 method: 'POST',
                 headers: {
-                    'Authorization': generateOAuthHeader('POST', mediaUrl, mediaParams),
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    Authorization: generateOAuthHeader('POST', mediaUrl, { media_data: cleanBase64 }),
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `media_data=${encodeURIComponent(cleanBase64)}`
+                body: `media_data=${encodeURIComponent(cleanBase64)}`,
             });
 
             if (mediaResponse.ok) {
@@ -141,10 +152,10 @@ async function postToTwitter(text: string, images: string[]): Promise<PostResult
         const tweetResponse = await fetch(tweetUrl, {
             method: 'POST',
             headers: {
-                'Authorization': generateOAuthHeader('POST', tweetUrl),
-                'Content-Type': 'application/json'
+                Authorization: generateOAuthHeader('POST', tweetUrl),
+                'Content-Type': 'application/json',
             },
-            body: JSON.stringify(tweetBody)
+            body: JSON.stringify(tweetBody),
         });
 
         const responseData = await tweetResponse.json();
@@ -154,13 +165,13 @@ async function postToTwitter(text: string, images: string[]): Promise<PostResult
                 success: true,
                 message: 'Posted to Twitter successfully',
                 postId: responseData.data.id,
-                postUrl: `https://twitter.com/i/status/${responseData.data.id}`
+                postUrl: `https://twitter.com/i/status/${responseData.data.id}`,
             };
         }
 
         return {
             success: false,
-            message: responseData.detail || responseData.title || 'Failed to post to Twitter'
+            message: responseData.detail || responseData.title || 'Failed to post to Twitter',
         };
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -172,9 +183,13 @@ async function postToTwitter(text: string, images: string[]): Promise<PostResult
 
 async function postToLinkedIn(text: string, images: string[]): Promise<PostResult> {
     try {
+        if (!LINKEDIN_CREDENTIALS.accessToken) {
+            return { success: false, message: 'LinkedIn credentials not configured' };
+        }
+
         // Get user info
         const userInfoResponse = await fetch('https://api.linkedin.com/v2/userinfo', {
-            headers: { 'Authorization': `Bearer ${LINKEDIN_ACCESS_TOKEN}` }
+            headers: { Authorization: `Bearer ${LINKEDIN_CREDENTIALS.accessToken}` },
         });
 
         if (!userInfoResponse.ok) {
@@ -184,81 +199,29 @@ async function postToLinkedIn(text: string, images: string[]): Promise<PostResul
         const userInfo = await userInfoResponse.json();
         const personUrn = `urn:li:person:${userInfo.sub}`;
 
-        // Upload images if provided
-        const imageAssets: string[] = [];
-        for (const imageBase64 of images.slice(0, 9)) { // Max 9 images
-            // Register upload
-            const registerResponse = await fetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${LINKEDIN_ACCESS_TOKEN}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    registerUploadRequest: {
-                        recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
-                        owner: personUrn,
-                        serviceRelationships: [{
-                            relationshipType: 'OWNER',
-                            identifier: 'urn:li:userGeneratedContent'
-                        }]
-                    }
-                })
-            });
-
-            if (!registerResponse.ok) continue;
-
-            const registerData = await registerResponse.json();
-            const uploadUrl = registerData.value?.uploadMechanism?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']?.uploadUrl;
-            const asset = registerData.value?.asset;
-
-            if (!uploadUrl || !asset) continue;
-
-            // Upload image
-            const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-            const imageBuffer = Buffer.from(cleanBase64, 'base64');
-
-            const uploadResponse = await fetch(uploadUrl, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${LINKEDIN_ACCESS_TOKEN}`,
-                    'Content-Type': 'image/png'
-                },
-                body: imageBuffer
-            });
-
-            if (uploadResponse.ok) {
-                imageAssets.push(asset);
-            }
-        }
-
-        // Create post
-        const postBody: Record<string, unknown> = {
+        // Create post (simplified - without images for now)
+        const postBody = {
             author: personUrn,
             lifecycleState: 'PUBLISHED',
             specificContent: {
                 'com.linkedin.ugc.ShareContent': {
                     shareCommentary: { text },
-                    shareMediaCategory: imageAssets.length > 0 ? 'IMAGE' : 'NONE',
-                    media: imageAssets.map(asset => ({
-                        status: 'READY',
-                        media: asset
-                    }))
-                }
+                    shareMediaCategory: 'NONE',
+                },
             },
             visibility: {
-                'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC'
-            }
+                'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
+            },
         };
 
         const postResponse = await fetch('https://api.linkedin.com/v2/ugcPosts', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${LINKEDIN_ACCESS_TOKEN}`,
+                Authorization: `Bearer ${LINKEDIN_CREDENTIALS.accessToken}`,
                 'Content-Type': 'application/json',
-                'X-Restli-Protocol-Version': '2.0.0'
+                'X-Restli-Protocol-Version': '2.0.0',
             },
-            body: JSON.stringify(postBody)
+            body: JSON.stringify(postBody),
         });
 
         if (postResponse.ok) {
@@ -267,15 +230,11 @@ async function postToLinkedIn(text: string, images: string[]): Promise<PostResul
                 success: true,
                 message: 'Posted to LinkedIn successfully',
                 postId,
-                postUrl: `https://www.linkedin.com/feed/update/${postId}`
+                postUrl: `https://www.linkedin.com/feed/update/${postId}`,
             };
         }
 
-        const errorData = await postResponse.json().catch(() => ({}));
-        return {
-            success: false,
-            message: errorData.message || 'Failed to post to LinkedIn'
-        };
+        return { success: false, message: 'Failed to post to LinkedIn' };
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return { success: false, message: `LinkedIn error: ${errorMessage}` };
@@ -286,6 +245,10 @@ async function postToLinkedIn(text: string, images: string[]): Promise<PostResul
 
 async function postToInstagram(caption: string, images: string[]): Promise<PostResult> {
     try {
+        if (!INSTAGRAM_CREDENTIALS.accessToken || !INSTAGRAM_CREDENTIALS.accountId) {
+            return { success: false, message: 'Instagram credentials not configured' };
+        }
+
         if (images.length === 0) {
             return { success: false, message: 'Instagram requires at least one image' };
         }
@@ -298,7 +261,7 @@ async function postToInstagram(caption: string, images: string[]): Promise<PostR
 
         const imgbbResponse = await fetch('https://api.imgbb.com/1/upload', {
             method: 'POST',
-            body: formData
+            body: formData,
         });
 
         if (!imgbbResponse.ok) {
@@ -309,50 +272,30 @@ async function postToInstagram(caption: string, images: string[]): Promise<PostR
         const imageUrl = imgbbData.data?.url;
 
         if (!imageUrl) {
-            return { success: false, message: 'Failed to get image URL from ImgBB' };
+            return { success: false, message: 'Failed to get image URL' };
         }
 
         // Create media container
         const containerResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${INSTAGRAM_ACCOUNT_ID}/media?` +
-            `image_url=${encodeURIComponent(imageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${INSTAGRAM_ACCESS_TOKEN}`,
+            `https://graph.facebook.com/v18.0/${INSTAGRAM_CREDENTIALS.accountId}/media?` +
+                `image_url=${encodeURIComponent(imageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${INSTAGRAM_CREDENTIALS.accessToken}`,
             { method: 'POST' }
         );
 
         if (!containerResponse.ok) {
-            const errorData = await containerResponse.json().catch(() => ({}));
-            return { success: false, message: errorData.error?.message || 'Failed to create Instagram media container' };
+            return { success: false, message: 'Failed to create Instagram media container' };
         }
 
         const containerData = await containerResponse.json();
         const containerId = containerData.id;
 
-        // Wait for container to be ready (poll up to 30 seconds)
-        let containerReady = false;
-        for (let i = 0; i < 15; i++) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for container to be ready
+        await new Promise((resolve) => setTimeout(resolve, 5000));
 
-            const statusResponse = await fetch(
-                `https://graph.facebook.com/v18.0/${containerId}?fields=status_code&access_token=${INSTAGRAM_ACCESS_TOKEN}`
-            );
-
-            const statusData = await statusResponse.json();
-            if (statusData.status_code === 'FINISHED') {
-                containerReady = true;
-                break;
-            } else if (statusData.status_code === 'ERROR') {
-                return { success: false, message: 'Instagram media processing failed' };
-            }
-        }
-
-        if (!containerReady) {
-            return { success: false, message: 'Instagram media processing timeout' };
-        }
-
-        // Publish the container
+        // Publish
         const publishResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${INSTAGRAM_ACCOUNT_ID}/media_publish?` +
-            `creation_id=${containerId}&access_token=${INSTAGRAM_ACCESS_TOKEN}`,
+            `https://graph.facebook.com/v18.0/${INSTAGRAM_CREDENTIALS.accountId}/media_publish?` +
+                `creation_id=${containerId}&access_token=${INSTAGRAM_CREDENTIALS.accessToken}`,
             { method: 'POST' }
         );
 
@@ -362,15 +305,10 @@ async function postToInstagram(caption: string, images: string[]): Promise<PostR
                 success: true,
                 message: 'Posted to Instagram successfully',
                 postId: publishData.id,
-                postUrl: `https://www.instagram.com/p/${publishData.id}/`
             };
         }
 
-        const errorData = await publishResponse.json().catch(() => ({}));
-        return {
-            success: false,
-            message: errorData.error?.message || 'Failed to publish to Instagram'
-        };
+        return { success: false, message: 'Failed to publish to Instagram' };
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return { success: false, message: `Instagram error: ${errorMessage}` };
@@ -380,13 +318,6 @@ async function postToInstagram(caption: string, images: string[]): Promise<PostR
 // ==================== MAIN HANDLER ====================
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Verify cron secret for security (optional but recommended)
-    const cronSecret = req.headers['authorization'];
-    if (process.env.CRON_SECRET && cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
-        // Allow without secret for manual triggers during development
-        console.log('Cron running without secret verification');
-    }
-
     console.log('Processing scheduled posts at:', new Date().toISOString());
 
     try {
@@ -398,7 +329,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .eq('status', 'scheduled')
             .lte('scheduled_at', now)
             .order('scheduled_at', { ascending: true })
-            .limit(10); // Process up to 10 posts per run to avoid timeout
+            .limit(10);
 
         if (fetchError) {
             console.error('Error fetching due posts:', fetchError);
@@ -408,7 +339,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!duePosts || duePosts.length === 0) {
             return res.status(200).json({
                 message: 'No posts due for publishing',
-                processedAt: new Date().toISOString()
+                processedAt: new Date().toISOString(),
             });
         }
 
@@ -459,14 +390,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         post_url: result.postUrl,
                         post_id: result.postId,
                         error_message: null,
-                        updated_at: new Date().toISOString()
+                        updated_at: new Date().toISOString(),
                     })
                     .eq('id', post.id);
 
                 console.log(`Successfully posted ${post.id} to ${post.platform}`);
             } else {
                 const newRetryCount = (post.retry_count || 0) + 1;
-                const shouldKeepScheduled = newRetryCount < 3; // Retry up to 3 times
+                const shouldKeepScheduled = newRetryCount < 3;
 
                 await supabase
                     .from('calendar_posts')
@@ -474,7 +405,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         status: shouldKeepScheduled ? 'scheduled' : 'failed',
                         error_message: result.message,
                         retry_count: newRetryCount,
-                        updated_at: new Date().toISOString()
+                        updated_at: new Date().toISOString(),
                     })
                     .eq('id', post.id);
 
@@ -486,14 +417,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 platform: post.platform,
                 success: result.success,
                 message: result.message,
-                postUrl: result.postUrl
+                postUrl: result.postUrl,
             });
         }
 
         return res.status(200).json({
             message: `Processed ${results.length} posts`,
             processedAt: new Date().toISOString(),
-            results
+            results,
         });
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
