@@ -2,12 +2,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import https from 'https';
 
-// Hardcoded credentials (private repo, single user)
+// Twitter credentials from environment variables
 const TWITTER_CREDENTIALS = {
-  apiKey: 'am6lGOEaQsNwA5xq1paJlapy7',
-  apiSecret: 'VWSZ1q6YOC6hmz0pqzQUpPiiUhi9wvhdC6d837jxVOmisHCvi5',
-  accessToken: '1759762781132267520-1l3PHRog5pdY1LQMa0zTBWqmHPffl1',
-  accessTokenSecret: '6cCj6cXzRfmEqpwBWwQcr5UPib4xOWkK6MJ4UdwkXefTs',
+  apiKey: process.env.TWITTER_API_KEY || '',
+  apiSecret: process.env.TWITTER_API_SECRET || '',
+  accessToken: process.env.TWITTER_ACCESS_TOKEN || '',
+  accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET || '',
 };
 
 interface TwitterMediaUploadResponse {
@@ -173,6 +173,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Validate credentials are configured
+    if (!TWITTER_CREDENTIALS.apiKey || !TWITTER_CREDENTIALS.apiSecret ||
+        !TWITTER_CREDENTIALS.accessToken || !TWITTER_CREDENTIALS.accessTokenSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Twitter credentials not configured. Please set TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET environment variables.'
+      });
+    }
+
     const { text, images, caption } = req.body as { text?: string; images?: string[]; caption?: string };
 
     // Support both 'text' and 'caption' for flexibility
