@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 import ImageViewer from './ImageViewer';
+import SchedulePostModal from './SchedulePostModal';
+import { SocialPlatform } from '../types';
 
 interface ArticleToInfographicProps {
     history: ArticleHistoryItem[];
@@ -137,6 +139,9 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
     const [isExportingToSheets, setIsExportingToSheets] = useState(false);
     const [exportingPlatform, setExportingPlatform] = useState<string | null>(null);
     const [sheetsExportResults, setSheetsExportResults] = useState<{platform: string, success: boolean, message: string, driveUrl?: string}[]>([]);
+
+    // Schedule Modal State
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1004,6 +1009,14 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                                                         </>
                                                     )}
                                                 </button>
+                                                <button
+                                                    onClick={() => setShowScheduleModal(true)}
+                                                    disabled={!imageData}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                                >
+                                                    <Calendar className="w-4 h-4" />
+                                                    Schedule to Calendar
+                                                </button>
                                             </div>
                                         </div>
 
@@ -1326,6 +1339,23 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
                     </p>
                 </div>
             )}
+
+            {/* Schedule Post Modal */}
+            <SchedulePostModal
+                isOpen={showScheduleModal}
+                onClose={() => setShowScheduleModal(false)}
+                onSuccess={() => {
+                    setShowScheduleModal(false);
+                }}
+                title={inputMode === 'url' ? (() => { try { return new URL(inputValue).hostname; } catch { return 'Content Bundle'; } })() : inputValue.slice(0, 50)}
+                content={generatedPosts}
+                images={imageData ? [`data:image/png;base64,${imageData}`] : []}
+                hashtags={[]}
+                sourceType="content_bundle"
+                postType="image"
+                preSelectedPlatforms={selectedPlatforms.map(p => p.toLowerCase() as SocialPlatform)}
+                allowMultiplePlatforms={true}
+            />
         </div>
     );
 };

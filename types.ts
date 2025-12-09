@@ -17,7 +17,8 @@ export enum ViewMode {
   VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER',
   DRAFTS = 'DRAFTS',
   SCHEDULED = 'SCHEDULED',
-  CONTENT_BUNDLE_DRAFTS = 'CONTENT_BUNDLE_DRAFTS'
+  CONTENT_BUNDLE_DRAFTS = 'CONTENT_BUNDLE_DRAFTS',
+  CONTENT_CALENDAR = 'CONTENT_CALENDAR'
 }
 
 export interface D3Node extends SimulationNodeDatum {
@@ -161,6 +162,65 @@ export interface ScriptScene {
     segmentText: string;
     imageData: string | null;
     status: 'idle' | 'generating' | 'complete' | 'error';
+}
+
+// ==================== CONTENT CALENDAR TYPES ====================
+
+export type SocialPlatform = 'twitter' | 'linkedin' | 'instagram';
+
+export type CalendarPostStatus = 'scheduled' | 'posting' | 'posted' | 'failed';
+
+export type CalendarPostType = 'image' | 'carousel' | 'video' | 'text';
+
+export interface CalendarPost {
+    id: string;
+    title: string;
+    content: string;                    // The post text/caption
+    platform: SocialPlatform;
+    scheduledAt: string;                // ISO timestamp for when to post
+    status: CalendarPostStatus;
+    postType: CalendarPostType;
+    images: string[];                   // Base64 encoded images
+    hashtags: string[];
+    sourceType: 'content_bundle' | 'carousel' | 'blog' | 'thumbnail' | 'manual';
+    sourceId?: string;                  // Reference to source content bundle/carousel/etc
+    createdAt: string;
+    updatedAt: string;
+    postedAt?: string;                  // When it was actually posted
+    postUrl?: string;                   // URL of the published post
+    postId?: string;                    // Platform post ID
+    errorMessage?: string;              // Error message if posting failed
+    retryCount: number;                 // Number of retry attempts
+}
+
+export interface CalendarDay {
+    date: Date;
+    posts: CalendarPost[];
+    isCurrentMonth: boolean;
+    isToday: boolean;
+}
+
+export interface CalendarWeek {
+    days: CalendarDay[];
+}
+
+export interface CalendarMonth {
+    year: number;
+    month: number;
+    weeks: CalendarWeek[];
+}
+
+// For the schedule modal
+export interface SchedulePostData {
+    title: string;
+    content: string;
+    platform: SocialPlatform;
+    scheduledAt: Date;
+    postType: CalendarPostType;
+    images: string[];
+    hashtags: string[];
+    sourceType: CalendarPost['sourceType'];
+    sourceId?: string;
 }
 
 declare global {
