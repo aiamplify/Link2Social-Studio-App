@@ -121,8 +121,9 @@ async function uploadMedia(imageBase64: string): Promise<string> {
   }, body);
 
   if (response.statusCode !== 200) {
-    console.error('Media upload failed:', response.data);
-    throw new Error(`Media upload failed: ${response.data}`);
+    console.error('Media upload failed - Status:', response.statusCode);
+    console.error('Media upload failed - Response:', response.data);
+    throw new Error(`Media upload failed (HTTP ${response.statusCode}): ${response.data}`);
   }
 
   const result = JSON.parse(response.data) as TwitterMediaUploadResponse;
@@ -150,8 +151,20 @@ async function postTweet(text: string, mediaIds: string[]): Promise<{ id: string
   }, bodyStr);
 
   if (response.statusCode !== 201 && response.statusCode !== 200) {
-    console.error('Tweet posting failed:', response.data);
-    throw new Error(`Tweet posting failed: ${response.data}`);
+    console.error('Tweet posting failed - Status:', response.statusCode);
+    console.error('Tweet posting failed - Response:', response.data);
+
+    // Parse and extract detailed error info
+    let errorDetail = response.data;
+    try {
+      const errorJson = JSON.parse(response.data);
+      errorDetail = JSON.stringify(errorJson, null, 2);
+      console.error('Tweet posting failed - Parsed error:', errorJson);
+    } catch {
+      // Response wasn't JSON, use as-is
+    }
+
+    throw new Error(`Tweet posting failed (HTTP ${response.statusCode}): ${errorDetail}`);
   }
 
   const result = JSON.parse(response.data);
@@ -181,6 +194,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: 'Twitter credentials not configured. Please set TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET environment variables.'
       });
     }
+
+    // Log credential status (masked for security)
+    console.log('Twitter credentials loaded:', {
+      apiKey: TWITTER_CREDENTIALS.apiKey.substring(0, 5) + '...',
+      accessToken: TWITTER_CREDENTIALS.accessToken.substring(0, 10) + '...',
+    });
 
     const { text, images, caption } = req.body as { text?: string; images?: string[]; caption?: string };
 
