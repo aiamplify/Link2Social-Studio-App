@@ -18,6 +18,8 @@ import {
     Bold, Italic, Underline, List, ListOrdered, Quote, Code, Heading1, Heading2
 } from 'lucide-react';
 import ImageViewer from './ImageViewer';
+import SchedulePostModal from './SchedulePostModal';
+import { SocialPlatform } from '../types';
 
 // Platform configurations with optimal carousel specs (Twitter, LinkedIn, Instagram only)
 const PLATFORM_CONFIGS = [
@@ -144,6 +146,9 @@ const ArticleToCarousel: React.FC = () => {
     const [showScheduler, setShowScheduler] = useState(false);
     const [scheduledDate, setScheduledDate] = useState('');
     const [scheduledTime, setScheduledTime] = useState('');
+
+    // Calendar Schedule Modal State
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
     
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -910,23 +915,33 @@ const ArticleToCarousel: React.FC = () => {
                                         Social Media Captions
                                     </h3>
                                     {generatedCaptions.length > 0 && (
-                                        <button
-                                            onClick={handlePostToAllPlatforms}
-                                            disabled={isPosting}
-                                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-400 hover:to-blue-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-                                        >
-                                            {isPosting ? (
-                                                <>
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                    Posting...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Send className="w-4 h-4" />
-                                                    Post to All Platforms
-                                                </>
-                                            )}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handlePostToAllPlatforms}
+                                                disabled={isPosting}
+                                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-400 hover:to-blue-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                            >
+                                                {isPosting ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                        Posting...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Send className="w-4 h-4" />
+                                                        Post to All Platforms
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => setShowScheduleModal(true)}
+                                                disabled={!result}
+                                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                            >
+                                                <Calendar className="w-4 h-4" />
+                                                Schedule to Calendar
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
 
@@ -1074,6 +1089,23 @@ const ArticleToCarousel: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Schedule Post Modal */}
+            <SchedulePostModal
+                isOpen={showScheduleModal}
+                onClose={() => setShowScheduleModal(false)}
+                onSuccess={() => {
+                    setShowScheduleModal(false);
+                }}
+                title={urlInput || prompt || 'Carousel Post'}
+                content={generatedCaptions}
+                images={result?.slides.filter(s => s.imageData).map(s => `data:image/png;base64,${s.imageData}`) || []}
+                hashtags={[]}
+                sourceType="carousel"
+                postType="carousel"
+                preSelectedPlatforms={selectedPlatforms as SocialPlatform[]}
+                allowMultiplePlatforms={true}
+            />
         </div>
     );
 };

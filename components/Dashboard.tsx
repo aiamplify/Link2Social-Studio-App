@@ -13,6 +13,7 @@ import ScriptVisualizer from './ScriptVisualizer';
 import DraftManager from './DraftManager';
 import ScheduledPosts from './ScheduledPosts';
 import ContentBundleDrafts from './ContentBundleDrafts';
+import ContentCalendar from './ContentCalendar';
 import Home from './Home';
 import IntroAnimation from './IntroAnimation';
 import { ViewMode, ArticleHistoryItem, BlogPostResult, DraftPost, ScheduledPost } from '../types';
@@ -25,7 +26,8 @@ import {
     BarChart3, Calendar, CalendarDays, Palette, Wand2, Layers, Download, Upload, FolderOpen, Plus, ArrowRight,
     Activity, Target, Eye, MousePointer, Heart, MessageSquare, Repeat, BookOpen, Lightbulb, Rocket,
     Crown, Diamond, Award, Flame, Timer, CheckCircle2, AlertCircle, Info, HelpCircle, Keyboard,
-    Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid, Archive
+    Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid, Archive,
+    CalendarCheck
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -446,6 +448,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                         </div>
                     )}
 
+                    {/* Content Calendar - Primary scheduling view */}
+                    <button
+                        onClick={() => setCurrentView(ViewMode.CONTENT_CALENDAR)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                            currentView === ViewMode.CONTENT_CALENDAR
+                                ? 'bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 text-violet-300 border border-violet-500/20'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                        title={sidebarCollapsed ? 'Content Calendar' : undefined}
+                    >
+                        <Calendar className={`w-5 h-5 ${currentView === ViewMode.CONTENT_CALENDAR ? 'text-violet-400' : ''}`} />
+                        {!sidebarCollapsed && (
+                            <span className="flex-1 text-left font-medium">Content Calendar</span>
+                        )}
+                    </button>
+
                     {/* Drafts */}
                     <button
                         onClick={() => setCurrentView(ViewMode.DRAFTS)}
@@ -572,6 +590,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                                          currentView === ViewMode.DRAFTS ? 'Drafts' :
                                          currentView === ViewMode.SCHEDULED ? 'Scheduled' :
                                          currentView === ViewMode.CONTENT_BUNDLE_DRAFTS ? 'Saved Bundles' :
+                                         currentView === ViewMode.CONTENT_CALENDAR ? 'Content Calendar' :
                                          'Home'}
                                     </span>
                                 </>
@@ -833,6 +852,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                         {currentView === ViewMode.CONTENT_BUNDLE_DRAFTS && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <ContentBundleDrafts
+                                    onRefresh={() => {}}
+                                />
+                            </div>
+                        )}
+                        {currentView === ViewMode.CONTENT_CALENDAR && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <ContentCalendar
                                     onRefresh={() => {}}
                                 />
                             </div>
