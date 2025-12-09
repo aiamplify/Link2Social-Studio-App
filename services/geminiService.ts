@@ -11,6 +11,51 @@ import { RepoFileTree, Citation, SocialPost, CarouselResult, CarouselSlide, Blog
 // immediately before a call.
 const getAiClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+// Jina AI Reader API - fetches clean, LLM-friendly content from URLs
+async function fetchBlogContentWithJina(url: string): Promise<string> {
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const headers: Record<string, string> = {
+        'Accept': 'application/json',
+    };
+
+    // Add API key if available for higher rate limits
+    if (process.env.JINA_API_KEY) {
+        headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+    }
+
+    try {
+        const response = await fetch(jinaUrl, { headers });
+
+        if (!response.ok) {
+            throw new Error(`Jina Reader API returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Jina returns { url, title, content, ... }
+        // Combine title and content for comprehensive context
+        let blogContent = '';
+        if (data.title) {
+            blogContent += `Title: ${data.title}\n\n`;
+        }
+        if (data.description) {
+            blogContent += `Description: ${data.description}\n\n`;
+        }
+        if (data.content) {
+            blogContent += data.content;
+        }
+
+        if (!blogContent.trim()) {
+            throw new Error('Jina Reader returned empty content');
+        }
+
+        return blogContent;
+    } catch (error: any) {
+        console.error('Jina Reader API fetch failed:', error);
+        throw new Error(`Failed to fetch blog content: ${error.message}`);
+    }
+}
+
 // Robust retry logic for 503 Service Unavailable / Overloaded errors
 async function withRetry<T>(operation: () => Promise<T>, retries = 5, baseDelay = 5000): Promise<T> {
   let lastError;
@@ -783,23 +828,51 @@ export async function generateBlogFromArticle(
     onProgress: (stage: string) => void
 ): Promise<BlogPostResult> {
     const ai = getAiClient();
-    
-    // Step 1: Analyze and Write
+
+    // Step 1: Fetch content (for URLs) and Analyze
     onProgress("RESEARCHING & ANALYZING...");
-    
+
     // Map length to word count approx
-    const wordCount = length === 'Short' ? '500' 
-        : length === 'Medium' ? '1000' 
-        : length === 'Long' ? '2000' 
+    const wordCount = length === 'Short' ? '500'
+        : length === 'Medium' ? '1000'
+        : length === 'Long' ? '2000'
         : '3000';
-    
-    let contextPrompt = "";
+
+    // For URL sources, fetch content using Jina AI Reader API
+    let fetchedUrlContent = "";
     if (source.type === 'url') {
-        contextPrompt = `1. Access and analyze the content of this article: ${source.content} using Google Search.`;
+        onProgress("FETCHING ARTICLE CONTENT...");
+        try {
+            fetchedUrlContent = await fetchBlogContentWithJina(source.content);
+            // Truncate if too long to fit in context (keep first 15000 chars)
+            if (fetchedUrlContent.length > 15000) {
+                fetchedUrlContent = fetchedUrlContent.substring(0, 15000) + "\n\n[Content truncated...]";
+            }
+        } catch (error: any) {
+            console.error("Jina fetch failed, will use Google Search fallback:", error);
+            // Set to empty to trigger fallback behavior
+            fetchedUrlContent = "";
+        }
+        onProgress("WRITING BLOG POST...");
+    }
+
+    let contextPrompt = "";
+    let useGoogleSearch = false;
+
+    if (source.type === 'url') {
+        if (fetchedUrlContent) {
+            // Use the fetched content from Jina AI
+            contextPrompt = `1. Analyze the following article content (fetched from ${source.content}):\n\n---BEGIN ARTICLE---\n${fetchedUrlContent}\n---END ARTICLE---`;
+        } else {
+            // Fallback to Google Search if Jina fetch failed
+            contextPrompt = `1. Access and analyze the content of this article: ${source.content} using Google Search.`;
+            useGoogleSearch = true;
+        }
     } else if (source.type === 'text') {
         contextPrompt = `1. Analyze the following provided research/text document as the primary source material:\n"${source.content.substring(0, 8000)}..."`;
     } else {
         contextPrompt = `1. Research the topic "${source.content}" using Google Search to ensure up-to-date and accurate information.`;
+        useGoogleSearch = true;
     }
 
     const writingPrompt = `
@@ -895,12 +968,16 @@ export async function generateBlogFromArticle(
     let metadata = "AI Writer | Today | Tech";
     
     try {
+        // Only use Google Search tool for topic research or when Jina fetch failed
+        const config: any = {};
+        if (useGoogleSearch) {
+            config.tools = [{ googleSearch: {} }];
+        }
+
         const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-image-preview', 
+            model: 'gemini-3-pro-image-preview',
             contents: writingPrompt,
-            config: {
-                tools: [{ googleSearch: {} }],
-            }
+            config: config
         }));
         
         const fullText = response.text || "";
