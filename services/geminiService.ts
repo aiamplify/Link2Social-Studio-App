@@ -1547,3 +1547,456 @@ export async function generateScriptScene(
         throw error;
     }
 }
+
+// ============================================
+// SEO OPTIMIZATION FUNCTIONS
+// ============================================
+
+export interface SEOOptimizationResult {
+    title?: string;
+    content?: string;
+    metaDescription?: string;
+    keywords?: string[];
+    suggestedKeyword?: string;
+}
+
+// Research high-volume, low-competition keywords related to content
+export async function researchKeywords(
+    content: string,
+    topic: string,
+    currentKeyword?: string
+): Promise<{ keywords: string[]; primaryKeyword: string; analysis: string }> {
+    const ai = getAiClient();
+
+    const prompt = `
+    You are an SEO keyword research expert. Analyze the following blog content and topic to find the BEST keywords.
+
+    TOPIC: "${topic}"
+    ${currentKeyword ? `CURRENT KEYWORD: "${currentKeyword}"` : ''}
+
+    CONTENT PREVIEW:
+    "${content.substring(0, 3000)}..."
+
+    TASK: Research and identify HIGH-VOLUME, LOW-COMPETITION keywords that would help this content rank well in search engines.
+
+    Use Google Search to find:
+    1. Current trending searches related to this topic
+    2. Common questions people ask about this topic
+    3. Long-tail keyword variations
+    4. Related LSI (Latent Semantic Indexing) keywords
+
+    RETURN FORMAT (JSON only, no markdown):
+    {
+        "primaryKeyword": "the single best high-volume low-competition keyword phrase (2-4 words)",
+        "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
+        "analysis": "Brief explanation of why these keywords were chosen and their search intent"
+    }
+
+    Focus on keywords that:
+    - Have high search volume (many people search for them)
+    - Have low competition (fewer websites targeting them)
+    - Match user search intent
+    - Are specific enough to rank for (long-tail preferred)
+    `;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+            }
+        }));
+
+        const text = response.text || "";
+        const jsonStr = cleanJsonString(text);
+        const result = JSON.parse(jsonStr);
+
+        return {
+            keywords: result.keywords || [],
+            primaryKeyword: result.primaryKeyword || (result.keywords?.[0] || ''),
+            analysis: result.analysis || ''
+        };
+    } catch (error) {
+        console.error("Keyword research failed:", error);
+        throw new Error("Failed to research keywords");
+    }
+}
+
+// Optimize title for SEO (50-60 characters, include keyword)
+export async function optimizeTitle(
+    currentTitle: string,
+    content: string,
+    targetKeyword: string
+): Promise<string> {
+    const ai = getAiClient();
+
+    const prompt = `
+    You are an SEO title optimization expert.
+
+    CURRENT TITLE: "${currentTitle}"
+    TARGET KEYWORD: "${targetKeyword}"
+    CONTENT PREVIEW: "${content.substring(0, 1500)}..."
+
+    TASK: Rewrite the title to be SEO-optimized.
+
+    REQUIREMENTS:
+    - Length: 50-60 characters (CRITICAL - must be within this range)
+    - Include the target keyword naturally (preferably near the beginning)
+    - Make it compelling and click-worthy
+    - Maintain the core message of the original title
+
+    RETURN: Only the optimized title text, nothing else. No quotes, no explanation.
+    `;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        return (response.text || currentTitle).trim().replace(/^["']|["']$/g, '');
+    } catch (error) {
+        console.error("Title optimization failed:", error);
+        throw new Error("Failed to optimize title");
+    }
+}
+
+// Optimize meta description (150-160 characters)
+export async function optimizeMetaDescription(
+    currentDescription: string,
+    title: string,
+    content: string,
+    targetKeyword: string
+): Promise<string> {
+    const ai = getAiClient();
+
+    const prompt = `
+    You are an SEO meta description expert.
+
+    TITLE: "${title}"
+    TARGET KEYWORD: "${targetKeyword}"
+    CURRENT DESCRIPTION: "${currentDescription}"
+    CONTENT PREVIEW: "${content.substring(0, 1500)}..."
+
+    TASK: Write an SEO-optimized meta description.
+
+    REQUIREMENTS:
+    - Length: 150-160 characters (CRITICAL - must be within this range)
+    - Include the target keyword naturally
+    - Include a call-to-action or value proposition
+    - Accurately summarize the content
+    - Make it compelling to increase click-through rate
+
+    RETURN: Only the meta description text, nothing else. No quotes, no explanation. Exactly 150-160 characters.
+    `;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        let result = (response.text || '').trim().replace(/^["']|["']$/g, '');
+        // Ensure it's within range
+        if (result.length > 160) {
+            result = result.substring(0, 157) + '...';
+        }
+        return result;
+    } catch (error) {
+        console.error("Meta description optimization failed:", error);
+        throw new Error("Failed to optimize meta description");
+    }
+}
+
+// Optimize heading structure
+export async function optimizeHeadings(
+    content: string,
+    targetKeyword: string
+): Promise<string> {
+    const ai = getAiClient();
+
+    const prompt = `
+    You are an SEO content structure expert.
+
+    TARGET KEYWORD: "${targetKeyword}"
+
+    CONTENT:
+    ${content}
+
+    TASK: Restructure the content headings for optimal SEO.
+
+    REQUIREMENTS:
+    - Ensure at least 3-4 H2 headings (## in markdown)
+    - Ensure at least 2-3 H3 subheadings (### in markdown)
+    - Include the target keyword in at least one H2 heading
+    - Use numbered sections where appropriate (e.g., "## 1. Introduction to...")
+    - Make headings descriptive and keyword-rich
+    - Maintain the original content and meaning
+    - Keep all existing content, links, and formatting
+
+    RETURN: The full content with optimized heading structure. Return the complete markdown content.
+    `;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        return (response.text || content).trim();
+    } catch (error) {
+        console.error("Heading optimization failed:", error);
+        throw new Error("Failed to optimize headings");
+    }
+}
+
+// Optimize keyword density (1-2.5% optimal)
+export async function optimizeKeywordDensity(
+    content: string,
+    targetKeyword: string
+): Promise<string> {
+    const ai = getAiClient();
+
+    // Calculate current density
+    const wordCount = content.split(/\s+/).length;
+    const keywordCount = (content.toLowerCase().match(new RegExp(targetKeyword.toLowerCase(), 'g')) || []).length;
+    const currentDensity = (keywordCount / wordCount) * 100;
+
+    const prompt = `
+    You are an SEO keyword optimization expert.
+
+    TARGET KEYWORD: "${targetKeyword}"
+    CURRENT KEYWORD COUNT: ${keywordCount} occurrences
+    TOTAL WORDS: ${wordCount}
+    CURRENT DENSITY: ${currentDensity.toFixed(2)}%
+    OPTIMAL DENSITY: 1.5-2.0%
+
+    CONTENT:
+    ${content}
+
+    TASK: Optimize the keyword density to achieve 1.5-2.0% density.
+
+    REQUIREMENTS:
+    ${currentDensity < 1 ? '- ADD more natural occurrences of the keyword and related variations' : ''}
+    ${currentDensity > 2.5 ? '- REDUCE keyword usage to avoid over-optimization' : ''}
+    - Insert keywords naturally in context (don't force them)
+    - Use keyword variations and synonyms (LSI keywords)
+    - Add keywords in strategic positions (first paragraph, headings, conclusion)
+    - Maintain readability and natural flow
+    - Keep all existing links, images markers, and formatting
+    - Do NOT change [[IMAGE_X]] placeholders
+
+    RETURN: The full optimized content. Return complete markdown.
+    `;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        return (response.text || content).trim();
+    } catch (error) {
+        console.error("Keyword optimization failed:", error);
+        throw new Error("Failed to optimize keywords");
+    }
+}
+
+// Optimize readability (shorter sentences, clearer language)
+export async function optimizeReadability(
+    content: string
+): Promise<string> {
+    const ai = getAiClient();
+
+    const prompt = `
+    You are a content readability expert.
+
+    CONTENT:
+    ${content}
+
+    TASK: Optimize the content for maximum readability.
+
+    REQUIREMENTS:
+    - Break long sentences into shorter ones (aim for average 15-20 words per sentence)
+    - Use simple, clear language
+    - Add transition words for flow
+    - Use bullet points where appropriate for lists
+    - Break long paragraphs into shorter ones (2-4 sentences max)
+    - Maintain the original meaning and all information
+    - Keep all markdown formatting, links, and [[IMAGE_X]] placeholders intact
+    - Keep all headings (##, ###) exactly as they are
+
+    RETURN: The full optimized content with improved readability. Return complete markdown.
+    `;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        return (response.text || content).trim();
+    } catch (error) {
+        console.error("Readability optimization failed:", error);
+        throw new Error("Failed to optimize readability");
+    }
+}
+
+// Comprehensive SEO optimization that runs until all scores are above target
+export async function optimizeAllSEO(
+    title: string,
+    content: string,
+    metaDescription: string,
+    currentKeyword: string,
+    onProgress: (stage: string, scores: { [key: string]: number }) => void,
+    targetScore: number = 90
+): Promise<{
+    title: string;
+    content: string;
+    metaDescription: string;
+    keyword: string;
+}> {
+    const ai = getAiClient();
+
+    // Helper to calculate scores
+    const calculateScores = (t: string, c: string, meta: string, kw: string) => {
+        const scores: { [key: string]: number } = {};
+
+        // Title
+        const titleLen = t.length;
+        if (titleLen >= 50 && titleLen <= 60) scores.title = 100;
+        else if (titleLen >= 40 && titleLen <= 70) scores.title = 75;
+        else scores.title = 50;
+
+        // Meta
+        const metaLen = meta.length;
+        if (metaLen >= 150 && metaLen <= 160) scores.meta = 100;
+        else if (metaLen >= 120 && metaLen <= 180) scores.meta = 75;
+        else if (metaLen === 0) scores.meta = 25;
+        else scores.meta = 50;
+
+        // Headings
+        const h2Count = (c.match(/^## /gm) || []).length;
+        const h3Count = (c.match(/^### /gm) || []).length;
+        if (h2Count >= 3 && h3Count >= 2) scores.headings = 100;
+        else if (h2Count >= 2) scores.headings = 75;
+        else scores.headings = 50;
+
+        // Keywords
+        if (kw) {
+            const keywordCount = (c.toLowerCase().match(new RegExp(kw.toLowerCase(), 'g')) || []).length;
+            const density = (keywordCount / c.split(' ').length) * 100;
+            if (density >= 1 && density <= 2.5) scores.keywords = 100;
+            else if (density > 0) scores.keywords = 75;
+            else scores.keywords = 25;
+        } else {
+            scores.keywords = 50;
+        }
+
+        // Readability
+        const sentences = c.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        const avgLen = sentences.reduce((acc, s) => acc + s.split(' ').length, 0) / sentences.length;
+        if (avgLen <= 20) scores.readability = 100;
+        else if (avgLen <= 25) scores.readability = 75;
+        else scores.readability = 50;
+
+        return scores;
+    };
+
+    let optimizedTitle = title;
+    let optimizedContent = content;
+    let optimizedMeta = metaDescription;
+    let optimizedKeyword = currentKeyword;
+
+    // Step 1: Research keywords if none provided or score is low
+    onProgress("Researching optimal keywords...", calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword));
+
+    if (!optimizedKeyword) {
+        try {
+            const keywordResult = await researchKeywords(optimizedContent, optimizedTitle, optimizedKeyword);
+            optimizedKeyword = keywordResult.primaryKeyword;
+        } catch (e) {
+            console.warn("Keyword research failed, continuing with other optimizations");
+        }
+    }
+
+    let scores = calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword);
+    let iterations = 0;
+    const maxIterations = 3;
+
+    // Iterative optimization loop
+    while (iterations < maxIterations) {
+        iterations++;
+
+        // Optimize Title if below target
+        if (scores.title < targetScore) {
+            onProgress(`Optimizing title (iteration ${iterations})...`, scores);
+            try {
+                optimizedTitle = await optimizeTitle(optimizedTitle, optimizedContent, optimizedKeyword);
+                scores = calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword);
+            } catch (e) {
+                console.warn("Title optimization failed:", e);
+            }
+        }
+
+        // Optimize Meta Description if below target
+        if (scores.meta < targetScore) {
+            onProgress(`Optimizing meta description (iteration ${iterations})...`, scores);
+            try {
+                optimizedMeta = await optimizeMetaDescription(optimizedMeta, optimizedTitle, optimizedContent, optimizedKeyword);
+                scores = calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword);
+            } catch (e) {
+                console.warn("Meta optimization failed:", e);
+            }
+        }
+
+        // Optimize Headings if below target
+        if (scores.headings < targetScore) {
+            onProgress(`Optimizing heading structure (iteration ${iterations})...`, scores);
+            try {
+                optimizedContent = await optimizeHeadings(optimizedContent, optimizedKeyword);
+                scores = calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword);
+            } catch (e) {
+                console.warn("Heading optimization failed:", e);
+            }
+        }
+
+        // Optimize Keywords if below target
+        if (scores.keywords < targetScore) {
+            onProgress(`Optimizing keyword density (iteration ${iterations})...`, scores);
+            try {
+                optimizedContent = await optimizeKeywordDensity(optimizedContent, optimizedKeyword);
+                scores = calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword);
+            } catch (e) {
+                console.warn("Keyword optimization failed:", e);
+            }
+        }
+
+        // Optimize Readability if below target
+        if (scores.readability < targetScore) {
+            onProgress(`Optimizing readability (iteration ${iterations})...`, scores);
+            try {
+                optimizedContent = await optimizeReadability(optimizedContent);
+                scores = calculateScores(optimizedTitle, optimizedContent, optimizedMeta, optimizedKeyword);
+            } catch (e) {
+                console.warn("Readability optimization failed:", e);
+            }
+        }
+
+        // Check if all scores are above target
+        const allAboveTarget = Object.values(scores).every(s => s >= targetScore);
+        if (allAboveTarget) {
+            break;
+        }
+    }
+
+    onProgress("SEO optimization complete!", scores);
+
+    return {
+        title: optimizedTitle,
+        content: optimizedContent,
+        metaDescription: optimizedMeta,
+        keyword: optimizedKeyword
+    };
+}

@@ -4,7 +4,17 @@
  */
 
 import React, { useState, useRef } from 'react';
-import { generateBlogFromArticle, regenerateBlogVisual } from '../services/geminiService';
+import {
+    generateBlogFromArticle,
+    regenerateBlogVisual,
+    researchKeywords,
+    optimizeTitle,
+    optimizeMetaDescription,
+    optimizeHeadings,
+    optimizeKeywordDensity,
+    optimizeReadability,
+    optimizeAllSEO
+} from '../services/geminiService';
 import { BlogPostResult, BlogVisual } from '../types';
 import { 
     RefreshCw, Loader2, AlertCircle, FileText, Download, Copy, Check, Image as ImageIcon, Sparkles, 
@@ -150,6 +160,13 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
     const [scheduleDate, setScheduleDate] = useState('');
     const [scheduleTime, setScheduleTime] = useState('');
     const [isScheduling, setIsScheduling] = useState(false);
+
+    // SEO Optimization State
+    const [isOptimizing, setIsOptimizing] = useState(false);
+    const [optimizingMetric, setOptimizingMetric] = useState<string | null>(null);
+    const [optimizationProgress, setOptimizationProgress] = useState('');
+    const [suggestedKeywords, setSuggestedKeywords] = useState<string[]>([]);
+    const [showKeywordSuggestions, setShowKeywordSuggestions] = useState(false);
 
     // Refs
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -343,6 +360,130 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
             console.error("Failed to regenerate", e);
         } finally {
             setRegeneratingId(null);
+        }
+    };
+
+    // SEO Optimization Handlers
+    const handleResearchKeywords = async () => {
+        if (!result) return;
+        setOptimizingMetric('keywords');
+        setOptimizationProgress('Researching high-volume, low-competition keywords...');
+        try {
+            const keywordResult = await researchKeywords(editContent, result.title, targetKeyword);
+            setSuggestedKeywords(keywordResult.keywords);
+            setShowKeywordSuggestions(true);
+            if (keywordResult.primaryKeyword) {
+                setTargetKeyword(keywordResult.primaryKeyword);
+            }
+        } catch (e) {
+            console.error("Keyword research failed:", e);
+        } finally {
+            setOptimizingMetric(null);
+            setOptimizationProgress('');
+        }
+    };
+
+    const handleOptimizeTitle = async () => {
+        if (!result || !targetKeyword) return;
+        setOptimizingMetric('title');
+        setOptimizationProgress('Optimizing title for SEO...');
+        try {
+            const newTitle = await optimizeTitle(result.title, editContent, targetKeyword);
+            setResult({ ...result, title: newTitle });
+        } catch (e) {
+            console.error("Title optimization failed:", e);
+        } finally {
+            setOptimizingMetric(null);
+            setOptimizationProgress('');
+        }
+    };
+
+    const handleOptimizeMetaDescription = async () => {
+        if (!result) return;
+        setOptimizingMetric('meta');
+        setOptimizationProgress('Optimizing meta description...');
+        try {
+            const newMeta = await optimizeMetaDescription(metaDescription, result.title, editContent, targetKeyword || result.title);
+            setMetaDescription(newMeta);
+        } catch (e) {
+            console.error("Meta description optimization failed:", e);
+        } finally {
+            setOptimizingMetric(null);
+            setOptimizationProgress('');
+        }
+    };
+
+    const handleOptimizeHeadings = async () => {
+        if (!result) return;
+        setOptimizingMetric('headings');
+        setOptimizationProgress('Optimizing heading structure...');
+        try {
+            const newContent = await optimizeHeadings(editContent, targetKeyword || result.title);
+            setEditContent(newContent);
+        } catch (e) {
+            console.error("Heading optimization failed:", e);
+        } finally {
+            setOptimizingMetric(null);
+            setOptimizationProgress('');
+        }
+    };
+
+    const handleOptimizeKeywordDensity = async () => {
+        if (!result || !targetKeyword) return;
+        setOptimizingMetric('keywords');
+        setOptimizationProgress('Optimizing keyword density...');
+        try {
+            const newContent = await optimizeKeywordDensity(editContent, targetKeyword);
+            setEditContent(newContent);
+        } catch (e) {
+            console.error("Keyword density optimization failed:", e);
+        } finally {
+            setOptimizingMetric(null);
+            setOptimizationProgress('');
+        }
+    };
+
+    const handleOptimizeReadability = async () => {
+        if (!result) return;
+        setOptimizingMetric('readability');
+        setOptimizationProgress('Optimizing readability...');
+        try {
+            const newContent = await optimizeReadability(editContent);
+            setEditContent(newContent);
+        } catch (e) {
+            console.error("Readability optimization failed:", e);
+        } finally {
+            setOptimizingMetric(null);
+            setOptimizationProgress('');
+        }
+    };
+
+    const handleOptimizeAll = async () => {
+        if (!result) return;
+        setIsOptimizing(true);
+        setOptimizationProgress('Starting comprehensive SEO optimization...');
+        try {
+            const optimizedResult = await optimizeAllSEO(
+                result.title,
+                editContent,
+                metaDescription,
+                targetKeyword,
+                (stage, scores) => {
+                    setOptimizationProgress(stage);
+                },
+                90
+            );
+
+            // Apply all optimizations
+            setResult({ ...result, title: optimizedResult.title });
+            setEditContent(optimizedResult.content);
+            setMetaDescription(optimizedResult.metaDescription);
+            setTargetKeyword(optimizedResult.keyword);
+        } catch (e) {
+            console.error("Full SEO optimization failed:", e);
+        } finally {
+            setIsOptimizing(false);
+            setOptimizationProgress('');
         }
     };
 
@@ -1055,6 +1196,7 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                             {/* SEO Analysis */}
                             {viewMode === 'seo' && (
                                 <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-6">
+                                    {/* Score Header */}
                                     <div className="text-center">
                                         <div className={`inline-flex items-center justify-center w-24 h-24 rounded-full bg-${getScoreColor(seoScore.overall)}-500/20 border-4 border-${getScoreColor(seoScore.overall)}-500/30 mb-4`}>
                                             <span className={`text-3xl font-bold text-${getScoreColor(seoScore.overall)}-400`}>{seoScore.overall}</span>
@@ -1063,29 +1205,205 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                         <p className="text-slate-500 text-sm">Based on 6 key factors</p>
                                     </div>
 
-                                    <div className="space-y-3">
-                                        {[
-                                            { label: 'Title Length', data: seoScore.titleLength },
-                                            { label: 'Meta Description', data: seoScore.metaDescription },
-                                            { label: 'Heading Structure', data: seoScore.headings },
-                                            { label: 'Keyword Usage', data: seoScore.keywords },
-                                            { label: 'Readability', data: seoScore.readability },
-                                            { label: 'Images', data: seoScore.images },
-                                        ].map(item => (
-                                            <div key={item.label} className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <span className="text-sm font-medium text-white">{item.label}</span>
-                                                    <span className={`text-sm font-bold text-${getScoreColor(item.data.score)}-400`}>{item.data.score}%</span>
-                                                </div>
-                                                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                                    <div 
-                                                        className={`h-full bg-${getScoreColor(item.data.score)}-500 transition-all`}
-                                                        style={{ width: `${item.data.score}%` }}
-                                                    />
-                                                </div>
-                                                <p className="text-xs text-slate-500 mt-2">{item.data.message}</p>
+                                    {/* Optimize All Button */}
+                                    <div className="flex flex-col items-center gap-3">
+                                        <button
+                                            onClick={handleOptimizeAll}
+                                            disabled={isOptimizing || !result}
+                                            className="px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold flex items-center gap-2 hover:from-orange-600 hover:to-amber-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-orange-500/20"
+                                        >
+                                            {isOptimizing ? (
+                                                <>
+                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                    Optimizing...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Wand2 className="w-5 h-5" />
+                                                    Optimize All to 90%+
+                                                </>
+                                            )}
+                                        </button>
+                                        {optimizationProgress && (
+                                            <p className="text-sm text-orange-400 animate-pulse">{optimizationProgress}</p>
+                                        )}
+                                    </div>
+
+                                    {/* Keyword Suggestions */}
+                                    {showKeywordSuggestions && suggestedKeywords.length > 0 && (
+                                        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h4 className="text-sm font-medium text-emerald-400">Suggested Keywords</h4>
+                                                <button
+                                                    onClick={() => setShowKeywordSuggestions(false)}
+                                                    className="text-slate-500 hover:text-white"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
                                             </div>
-                                        ))}
+                                            <div className="flex flex-wrap gap-2">
+                                                {suggestedKeywords.map((kw, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => {
+                                                            setTargetKeyword(kw);
+                                                            setShowKeywordSuggestions(false);
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 text-sm hover:bg-emerald-500/30 transition-colors"
+                                                    >
+                                                        {kw}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Individual Metrics with Optimize Buttons */}
+                                    <div className="space-y-3">
+                                        {/* Title Length */}
+                                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-white">Title Length</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-bold text-${getScoreColor(seoScore.titleLength.score)}-400`}>{seoScore.titleLength.score}%</span>
+                                                    {seoScore.titleLength.score < 90 && (
+                                                        <button
+                                                            onClick={handleOptimizeTitle}
+                                                            disabled={optimizingMetric === 'title' || !targetKeyword}
+                                                            className="px-2 py-1 rounded-md bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                            title={!targetKeyword ? "Set a target keyword first" : "Optimize title"}
+                                                        >
+                                                            {optimizingMetric === 'title' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                                                            Optimize
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full bg-${getScoreColor(seoScore.titleLength.score)}-500 transition-all`} style={{ width: `${seoScore.titleLength.score}%` }} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">{seoScore.titleLength.message}</p>
+                                        </div>
+
+                                        {/* Meta Description */}
+                                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-white">Meta Description</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-bold text-${getScoreColor(seoScore.metaDescription.score)}-400`}>{seoScore.metaDescription.score}%</span>
+                                                    {seoScore.metaDescription.score < 90 && (
+                                                        <button
+                                                            onClick={handleOptimizeMetaDescription}
+                                                            disabled={optimizingMetric === 'meta'}
+                                                            className="px-2 py-1 rounded-md bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        >
+                                                            {optimizingMetric === 'meta' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                                                            Optimize
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full bg-${getScoreColor(seoScore.metaDescription.score)}-500 transition-all`} style={{ width: `${seoScore.metaDescription.score}%` }} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">{seoScore.metaDescription.message}</p>
+                                        </div>
+
+                                        {/* Heading Structure */}
+                                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-white">Heading Structure</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-bold text-${getScoreColor(seoScore.headings.score)}-400`}>{seoScore.headings.score}%</span>
+                                                    {seoScore.headings.score < 90 && (
+                                                        <button
+                                                            onClick={handleOptimizeHeadings}
+                                                            disabled={optimizingMetric === 'headings'}
+                                                            className="px-2 py-1 rounded-md bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        >
+                                                            {optimizingMetric === 'headings' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                                                            Optimize
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full bg-${getScoreColor(seoScore.headings.score)}-500 transition-all`} style={{ width: `${seoScore.headings.score}%` }} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">{seoScore.headings.message}</p>
+                                        </div>
+
+                                        {/* Keyword Usage */}
+                                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-white">Keyword Usage</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-bold text-${getScoreColor(seoScore.keywords.score)}-400`}>{seoScore.keywords.score}%</span>
+                                                    <button
+                                                        onClick={handleResearchKeywords}
+                                                        disabled={optimizingMetric === 'keywords'}
+                                                        className="px-2 py-1 rounded-md bg-blue-500/20 text-blue-400 text-xs font-medium hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        title="Research optimal keywords"
+                                                    >
+                                                        {optimizingMetric === 'keywords' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                                                        Research
+                                                    </button>
+                                                    {seoScore.keywords.score < 90 && targetKeyword && (
+                                                        <button
+                                                            onClick={handleOptimizeKeywordDensity}
+                                                            disabled={optimizingMetric === 'keywords'}
+                                                            className="px-2 py-1 rounded-md bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        >
+                                                            {optimizingMetric === 'keywords' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                                                            Optimize
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full bg-${getScoreColor(seoScore.keywords.score)}-500 transition-all`} style={{ width: `${seoScore.keywords.score}%` }} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">{seoScore.keywords.message}</p>
+                                            {targetKeyword && (
+                                                <p className="text-xs text-orange-400 mt-1">Target: "{targetKeyword}"</p>
+                                            )}
+                                        </div>
+
+                                        {/* Readability */}
+                                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-white">Readability</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-bold text-${getScoreColor(seoScore.readability.score)}-400`}>{seoScore.readability.score}%</span>
+                                                    {seoScore.readability.score < 90 && (
+                                                        <button
+                                                            onClick={handleOptimizeReadability}
+                                                            disabled={optimizingMetric === 'readability'}
+                                                            className="px-2 py-1 rounded-md bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        >
+                                                            {optimizingMetric === 'readability' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                                                            Optimize
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full bg-${getScoreColor(seoScore.readability.score)}-500 transition-all`} style={{ width: `${seoScore.readability.score}%` }} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">{seoScore.readability.message}</p>
+                                        </div>
+
+                                        {/* Images (no optimization - just info) */}
+                                        <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-white">Images</span>
+                                                <span className={`text-sm font-bold text-${getScoreColor(seoScore.images.score)}-400`}>{seoScore.images.score}%</span>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full bg-${getScoreColor(seoScore.images.score)}-500 transition-all`} style={{ width: `${seoScore.images.score}%` }} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">{seoScore.images.message}</p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
