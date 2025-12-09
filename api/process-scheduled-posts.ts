@@ -181,6 +181,70 @@ async function postToTwitter(text: string, images: string[]): Promise<PostResult
 
 // ==================== LINKEDIN POSTING ====================
 
+/**
+ * Initialize an image upload to LinkedIn using v2 assets API
+ */
+async function initializeLinkedInImageUpload(personUrn: string): Promise<{ uploadUrl: string; asset: string }> {
+    const body = JSON.stringify({
+        registerUploadRequest: {
+            recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+            owner: personUrn,
+            serviceRelationships: [
+                {
+                    relationshipType: 'OWNER',
+                    identifier: 'urn:li:userGeneratedContent',
+                },
+            ],
+        },
+    });
+
+    const response = await fetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${LINKEDIN_CREDENTIALS.accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Restli-Protocol-Version': '2.0.0',
+        },
+        body,
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to initialize LinkedIn image upload: ${errorText}`);
+    }
+
+    const result = await response.json();
+    const uploadMechanism = result.value.uploadMechanism['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'];
+
+    return {
+        uploadUrl: uploadMechanism.uploadUrl,
+        asset: result.value.asset,
+    };
+}
+
+/**
+ * Upload image binary to LinkedIn
+ */
+async function uploadLinkedInImageBinary(uploadUrl: string, imageBase64: string): Promise<void> {
+    // Remove data URL prefix if present
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+
+    const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${LINKEDIN_CREDENTIALS.accessToken}`,
+            'Content-Type': 'application/octet-stream',
+        },
+        body: imageBuffer,
+    });
+
+    if (!response.ok && response.status !== 201) {
+        const errorText = await response.text();
+        throw new Error(`LinkedIn image upload failed: ${response.status} ${errorText}`);
+    }
+}
+
 async function postToLinkedIn(text: string, images: string[]): Promise<PostResult> {
     try {
         if (!LINKEDIN_CREDENTIALS.accessToken) {
@@ -199,14 +263,42 @@ async function postToLinkedIn(text: string, images: string[]): Promise<PostResul
         const userInfo = await userInfoResponse.json();
         const personUrn = `urn:li:person:${userInfo.sub}`;
 
-        // Create post (simplified - without images for now)
+        // Upload images if provided
+        const imageAssets: string[] = [];
+        if (images && images.length > 0) {
+            const imagesToUpload = images.slice(0, 9); // LinkedIn allows up to 9 images
+            for (const image of imagesToUpload) {
+                try {
+                    // Initialize upload
+                    const { uploadUrl, asset } = await initializeLinkedInImageUpload(personUrn);
+
+                    // Upload the image binary
+                    await uploadLinkedInImageBinary(uploadUrl, image);
+
+                    imageAssets.push(asset);
+                    console.log(`Successfully uploaded image to LinkedIn, asset: ${asset}`);
+                } catch (error) {
+                    console.error('Failed to upload image to LinkedIn:', error);
+                    // Continue with other images
+                }
+            }
+        }
+
+        // Build media array for the post
+        const mediaArray = imageAssets.map(asset => ({
+            status: 'READY',
+            media: asset,
+        }));
+
+        // Create post with images
         const postBody = {
             author: personUrn,
             lifecycleState: 'PUBLISHED',
             specificContent: {
                 'com.linkedin.ugc.ShareContent': {
                     shareCommentary: { text },
-                    shareMediaCategory: 'NONE',
+                    shareMediaCategory: imageAssets.length > 0 ? 'IMAGE' : 'NONE',
+                    media: mediaArray,
                 },
             },
             visibility: {
@@ -234,7 +326,8 @@ async function postToLinkedIn(text: string, images: string[]): Promise<PostResul
             };
         }
 
-        return { success: false, message: 'Failed to post to LinkedIn' };
+        const errorText = await postResponse.text();
+        return { success: false, message: `Failed to post to LinkedIn: ${errorText}` };
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return { success: false, message: `LinkedIn error: ${errorMessage}` };
