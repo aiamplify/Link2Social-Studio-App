@@ -52,11 +52,134 @@ function cleanJsonString(text: string): string {
     } else if (clean.startsWith('```')) {
         clean = clean.substring(3);
     }
-    
+
     if (clean.endsWith('```')) {
         clean = clean.substring(0, clean.length - 3);
     }
     return clean.trim();
+}
+
+// Twitter character limit constant
+const TWITTER_CHAR_LIMIT = 280;
+
+// Helper to enforce Twitter's 280 character limit
+// Intelligently truncates content while preserving hashtags when possible
+function enforceTwitterCharLimit(content: string): string {
+    if (content.length <= TWITTER_CHAR_LIMIT) {
+        return content;
+    }
+
+    // Extract hashtags (typically at the end)
+    const hashtagRegex = /#\w+/g;
+    const allHashtags = content.match(hashtagRegex) || [];
+
+    // Find where the hashtag section starts (consecutive hashtags at the end)
+    let hashtagSectionStart = content.length;
+    let lastHashtagEndIndex = content.length;
+
+    // Work backwards to find the hashtag section at the end
+    const lines = content.split('\n');
+    const lastLine = lines[lines.length - 1];
+    const hashtagsInLastLine = lastLine.match(hashtagRegex);
+
+    if (hashtagsInLastLine && hashtagsInLastLine.length > 0) {
+        // Find where hashtags start in the last line
+        const firstHashtagInLastLine = lastLine.indexOf('#');
+        if (firstHashtagInLastLine !== -1) {
+            // Calculate position in original content
+            hashtagSectionStart = content.lastIndexOf(lastLine) + firstHashtagInLastLine;
+        }
+    }
+
+    // Get main content and hashtag section
+    let mainContent = content.substring(0, hashtagSectionStart).trim();
+    let hashtagSection = content.substring(hashtagSectionStart).trim();
+
+    // If no clear hashtag section found, extract hashtags differently
+    if (!hashtagSection || hashtagSection.length === 0) {
+        // Just truncate the whole content
+        mainContent = content;
+        hashtagSection = '';
+    }
+
+    // Calculate space needed for hashtags (keep as many as fit)
+    const hashtagsArray = hashtagSection.split(/\s+/).filter(h => h.startsWith('#'));
+    let finalHashtags = '';
+    let hashtagsToKeep: string[] = [];
+
+    // Calculate minimum space for main content (at least allow some truncation with ellipsis)
+    const minMainContentSpace = 50; // Minimum chars for main content
+    const ellipsis = '...';
+
+    // Try to fit hashtags, starting from the first one
+    for (const hashtag of hashtagsArray) {
+        const testHashtags = hashtagsToKeep.length > 0
+            ? hashtagsToKeep.join(' ') + ' ' + hashtag
+            : hashtag;
+        const testFinalHashtags = ' ' + testHashtags;
+
+        // Check if adding this hashtag still leaves room for main content
+        if (minMainContentSpace + ellipsis.length + testFinalHashtags.length <= TWITTER_CHAR_LIMIT) {
+            hashtagsToKeep.push(hashtag);
+        } else {
+            break;
+        }
+    }
+
+    finalHashtags = hashtagsToKeep.length > 0 ? ' ' + hashtagsToKeep.join(' ') : '';
+
+    // Calculate max length for main content
+    const maxMainContentLength = TWITTER_CHAR_LIMIT - finalHashtags.length - ellipsis.length;
+
+    // Truncate main content if needed
+    if (mainContent.length > maxMainContentLength) {
+        // Find a good break point (word boundary, sentence end, etc.)
+        let truncatedContent = mainContent.substring(0, maxMainContentLength);
+
+        // Try to break at a sentence boundary first
+        const sentenceBreaks = ['. ', '! ', '? ', '.\n', '!\n', '?\n'];
+        let bestBreakPoint = -1;
+
+        for (const breakChar of sentenceBreaks) {
+            const lastBreak = truncatedContent.lastIndexOf(breakChar);
+            if (lastBreak > maxMainContentLength * 0.5 && lastBreak > bestBreakPoint) {
+                bestBreakPoint = lastBreak + 1; // Include the punctuation
+            }
+        }
+
+        // If no sentence break found, try word boundary
+        if (bestBreakPoint === -1) {
+            const lastSpace = truncatedContent.lastIndexOf(' ');
+            if (lastSpace > maxMainContentLength * 0.5) {
+                bestBreakPoint = lastSpace;
+            }
+        }
+
+        // Apply the break point
+        if (bestBreakPoint > 0) {
+            truncatedContent = truncatedContent.substring(0, bestBreakPoint).trim();
+        } else {
+            truncatedContent = truncatedContent.trim();
+        }
+
+        mainContent = truncatedContent + ellipsis;
+    }
+
+    return (mainContent + finalHashtags).trim();
+}
+
+// Helper to apply Twitter character limit to social posts array
+function enforceTwitterLimitOnPosts(posts: SocialPost[]): SocialPost[] {
+    return posts.map(post => {
+        const platformLower = post.platform.toLowerCase();
+        if (platformLower === 'twitter' || platformLower === 'x / twitter' || platformLower === 'x') {
+            return {
+                ...post,
+                content: enforceTwitterCharLimit(post.content)
+            };
+        }
+        return post;
+    });
 }
 
 export interface InfographicResult {
@@ -398,7 +521,9 @@ export async function generateArticleInfographic(
                 }
             }
         }
-        return { imageData, citations, socialPosts };
+        // Enforce Twitter 280 character limit on all Twitter posts
+        const enforcedPosts = enforceTwitterLimitOnPosts(socialPosts);
+        return { imageData, citations, socialPosts: enforcedPosts };
     } catch (error) {
         console.error("Article infographic generation failed:", error);
         throw error;
@@ -634,12 +759,16 @@ export async function generateCarousel(
 
     // Extract captions - support both new multi-platform format and legacy single caption
     const captions: SocialPost[] = plan.captions || [];
-    const legacyCaption = plan.caption || (captions.length > 0 ? captions[0].content : "Check out this new carousel!");
+
+    // Enforce Twitter 280 character limit on all Twitter posts
+    const enforcedCaptions = enforceTwitterLimitOnPosts(captions);
+
+    const legacyCaption = plan.caption || (enforcedCaptions.length > 0 ? enforcedCaptions[0].content : "Check out this new carousel!");
 
     return {
         slides,
         caption: legacyCaption,
-        captions: captions
+        captions: enforcedCaptions
     };
 }
 
