@@ -15,6 +15,7 @@ export enum ViewMode {
   YOUTUBE_THUMBNAIL = 'YOUTUBE_THUMBNAIL',
   VIDEO_BROLL = 'VIDEO_BROLL',
   VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER',
+  VIRAL_POST_ANALYZER = 'VIRAL_POST_ANALYZER',
   DRAFTS = 'DRAFTS',
   SCHEDULED = 'SCHEDULED',
   CONTENT_BUNDLE_DRAFTS = 'CONTENT_BUNDLE_DRAFTS',
@@ -221,6 +222,98 @@ export interface SchedulePostData {
     hashtags: string[];
     sourceType: CalendarPost['sourceType'];
     sourceId?: string;
+}
+
+// ==================== VIRAL POST ANALYZER TYPES ====================
+
+export type HookCategory = 'Curiosity' | 'Shock' | 'Authority' | 'Story' | 'Fear' | 'Desire' | 'Controversy' | 'Mystery';
+export type PacingType = 'Fast' | 'Medium' | 'Slow';
+export type AudienceIntent = 'Learning' | 'Buying' | 'Entertaining' | 'Inspiring' | 'Problem-Solving';
+
+export interface ViralStructureBreakdown {
+    hookCategory: HookCategory;
+    hookText: string;
+    sentenceRhythm: string;
+    lineBreakStrategy: string;
+    emojiPsychology: string | null;
+    pacingType: PacingType;
+    contentLengthClass: 'Micro' | 'Short' | 'Medium' | 'Long' | 'Thread';
+}
+
+export interface PsychologicalTriggerMap {
+    primaryEmotion: string;
+    secondaryEmotion: string;
+    patternInterrupt: string;
+    socialValidation: string;
+    urgencySignal: string | null;
+    scarcityTactic: string | null;
+    identityAppeal: string;
+}
+
+export interface AlgorithmScore {
+    overall: number;
+    engagementBaiting: { score: number; reason: string };
+    retentionTriggers: { score: number; reason: string };
+    rewatchFactor: { score: number; reason: string };
+    commentActivation: { score: number; reason: string };
+    shareMotivation: { score: number; reason: string };
+}
+
+export interface ConversionScore {
+    overall: number;
+    ctaClarity: { score: number; reason: string };
+    trustIndicators: { score: number; reason: string };
+    offerPositioning: { score: number; reason: string };
+    curiosityGap: { score: number; reason: string };
+}
+
+export interface PlatformRewrite {
+    platform: 'TikTok' | 'Instagram' | 'X' | 'LinkedIn' | 'Facebook' | 'YouTube';
+    content: string;
+    hashtags: string[];
+    characterCount: number;
+    optimizationNotes: string;
+}
+
+export interface ContentDNASummary {
+    whyItWentViral: string;
+    commonMistakesCopying: string;
+    ethicalReplicationGuide: string;
+}
+
+export interface ViralFormulaJSON {
+    hookFormula: string;
+    structurePattern: string;
+    emotionalSequence: string[];
+    ctaTemplate: string;
+    platformOptimizations: Record<string, string>;
+}
+
+export interface ViralPostAnalysisResult {
+    originalContent: string;
+    platform: string;
+    structure: ViralStructureBreakdown;
+    psychology: PsychologicalTriggerMap;
+    algorithmScore: AlgorithmScore;
+    conversionScore: ConversionScore;
+    platformRewrites: PlatformRewrite[];
+    brandFriendlyVersions: string[];
+    aggressiveVersions: string[];
+    contentDNA: ContentDNASummary;
+    matchingHooks: string[];
+    viralFormula: ViralFormulaJSON;
+    visualTriggerType?: string;
+    audienceIntent: AudienceIntent;
+}
+
+export interface SavedViralFormula {
+    id: string;
+    name: string;
+    formula: ViralFormulaJSON;
+    originalPost: string;
+    platform: string;
+    createdAt: string;
+    tags: string[];
 }
 
 declare global {

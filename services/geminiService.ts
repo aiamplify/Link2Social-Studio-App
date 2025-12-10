@@ -2000,3 +2000,587 @@ export async function optimizeAllSEO(
         keyword: optimizedKeyword
     };
 }
+
+// ============================================
+// VIRAL POST ANALYZER FUNCTIONS
+// ============================================
+
+import type {
+    ViralPostAnalysisResult,
+    ViralStructureBreakdown,
+    PsychologicalTriggerMap,
+    AlgorithmScore,
+    ConversionScore,
+    PlatformRewrite,
+    ContentDNASummary,
+    ViralFormulaJSON,
+    HookCategory,
+    PacingType,
+    AudienceIntent
+} from '../types';
+
+// Fetch social post content from URL using Jina AI
+async function fetchSocialPostContent(url: string): Promise<{ content: string; platform: string }> {
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const headers: Record<string, string> = {
+        'Accept': 'application/json',
+    };
+
+    if (process.env.JINA_API_KEY) {
+        headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`;
+    }
+
+    try {
+        const response = await fetch(jinaUrl, { headers });
+        if (!response.ok) {
+            throw new Error(`Jina Reader API returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Detect platform from URL
+        let platform = 'Unknown';
+        const urlLower = url.toLowerCase();
+        if (urlLower.includes('tiktok.com')) platform = 'TikTok';
+        else if (urlLower.includes('instagram.com')) platform = 'Instagram';
+        else if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) platform = 'X';
+        else if (urlLower.includes('linkedin.com')) platform = 'LinkedIn';
+        else if (urlLower.includes('facebook.com')) platform = 'Facebook';
+        else if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) platform = 'YouTube';
+
+        let content = '';
+        if (data.title) content += data.title + '\n\n';
+        if (data.description) content += data.description + '\n\n';
+        if (data.content) content += data.content;
+
+        return { content: content.trim(), platform };
+    } catch (error: any) {
+        console.error('Failed to fetch social post content:', error);
+        throw new Error(`Failed to fetch post content: ${error.message}`);
+    }
+}
+
+// Main viral post analysis function
+export async function analyzeViralPost(
+    input: { type: 'url' | 'text' | 'image'; content: string; platform?: string },
+    onProgress: (stage: string) => void
+): Promise<ViralPostAnalysisResult> {
+    const ai = getAiClient();
+
+    let postContent = '';
+    let detectedPlatform = input.platform || 'Unknown';
+
+    // PHASE 1: Content Extraction
+    onProgress("EXTRACTING POST CONTENT...");
+
+    if (input.type === 'url') {
+        try {
+            const fetched = await fetchSocialPostContent(input.content);
+            postContent = fetched.content;
+            detectedPlatform = fetched.platform;
+        } catch (e) {
+            // Fallback to Google Search
+            onProgress("ANALYZING URL VIA SEARCH...");
+            postContent = `[URL to analyze: ${input.content}]`;
+        }
+    } else if (input.type === 'text') {
+        postContent = input.content;
+    } else if (input.type === 'image') {
+        // For image analysis, we'll analyze the visual separately
+        postContent = '[Visual content to analyze]';
+    }
+
+    // PHASE 2: Deep Analysis with AI
+    onProgress("ANALYZING VIRAL MECHANICS...");
+
+    const analysisPrompt = `You are an elite viral content strategist and growth consultant with expertise in social media psychology, copywriting, and platform algorithms.
+
+ANALYZE THIS SOCIAL MEDIA POST:
+---
+Platform: ${detectedPlatform}
+Content:
+${postContent}
+---
+
+Perform a DEEP REVERSE-ENGINEERING analysis. Return a comprehensive JSON response with the following structure (NO markdown, just valid JSON):
+
+{
+    "structure": {
+        "hookCategory": "Curiosity|Shock|Authority|Story|Fear|Desire|Controversy|Mystery",
+        "hookText": "The exact hook/opening line",
+        "sentenceRhythm": "Description of the rhythm pattern (e.g., 'Short-Short-Long', 'Punchy staccato', etc.)",
+        "lineBreakStrategy": "How line breaks are used for effect",
+        "emojiPsychology": "Analysis of emoji usage and psychological effect, or null if none",
+        "pacingType": "Fast|Medium|Slow",
+        "contentLengthClass": "Micro|Short|Medium|Long|Thread"
+    },
+    "psychology": {
+        "primaryEmotion": "The dominant emotion being triggered",
+        "secondaryEmotion": "The supporting emotion",
+        "patternInterrupt": "What pattern interrupt technique is used",
+        "socialValidation": "How social proof/validation is established",
+        "urgencySignal": "Any urgency/FOMO tactics used, or null",
+        "scarcityTactic": "Any scarcity messaging, or null",
+        "identityAppeal": "What identity/tribe is being appealed to"
+    },
+    "algorithmScore": {
+        "overall": 0-100,
+        "engagementBaiting": { "score": 0-100, "reason": "explanation" },
+        "retentionTriggers": { "score": 0-100, "reason": "explanation" },
+        "rewatchFactor": { "score": 0-100, "reason": "explanation" },
+        "commentActivation": { "score": 0-100, "reason": "explanation" },
+        "shareMotivation": { "score": 0-100, "reason": "explanation" }
+    },
+    "conversionScore": {
+        "overall": 0-100,
+        "ctaClarity": { "score": 0-100, "reason": "explanation" },
+        "trustIndicators": { "score": 0-100, "reason": "explanation" },
+        "offerPositioning": { "score": 0-100, "reason": "explanation" },
+        "curiosityGap": { "score": 0-100, "reason": "explanation" }
+    },
+    "audienceIntent": "Learning|Buying|Entertaining|Inspiring|Problem-Solving",
+    "visualTriggerType": "Description of visual strategy if applicable",
+    "contentDNA": {
+        "whyItWentViral": "Detailed analysis of why this content succeeded",
+        "commonMistakesCopying": "What most people would do wrong when copying this",
+        "ethicalReplicationGuide": "How to ethically replicate this success"
+    },
+    "viralFormula": {
+        "hookFormula": "Template formula for the hook (e.g., '[Contrarian statement] + [Promise]')",
+        "structurePattern": "The structural pattern template",
+        "emotionalSequence": ["emotion1", "emotion2", "emotion3"],
+        "ctaTemplate": "Template for the call-to-action",
+        "platformOptimizations": {
+            "TikTok": "Specific optimization for TikTok",
+            "Instagram": "Specific optimization for Instagram",
+            "X": "Specific optimization for X/Twitter",
+            "LinkedIn": "Specific optimization for LinkedIn",
+            "Facebook": "Specific optimization for Facebook"
+        }
+    },
+    "matchingHooks": [
+        "Alternative hook 1 using the same formula",
+        "Alternative hook 2 using the same formula",
+        "Alternative hook 3 using the same formula",
+        "Alternative hook 4 using the same formula",
+        "Alternative hook 5 using the same formula"
+    ]
+}
+
+Be extremely detailed and analytical. Focus on actionable insights.`;
+
+    let analysisResult: any = {};
+
+    try {
+        const analysisResponse = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: analysisPrompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+            }
+        }));
+
+        const responseText = analysisResponse.text || "{}";
+        const jsonStr = cleanJsonString(responseText);
+        analysisResult = JSON.parse(jsonStr);
+    } catch (e) {
+        console.error("Analysis parsing failed:", e);
+        throw new Error("Failed to analyze viral post mechanics");
+    }
+
+    // PHASE 3: Generate Platform Rewrites
+    onProgress("GENERATING PLATFORM REWRITES...");
+
+    const rewritePrompt = `Based on this viral post analysis, generate PLATFORM-OPTIMIZED REWRITES.
+
+ORIGINAL POST:
+${postContent}
+
+VIRAL FORMULA DETECTED:
+${JSON.stringify(analysisResult.viralFormula, null, 2)}
+
+Generate rewrites for each platform. Return JSON array (no markdown):
+
+{
+    "platformRewrites": [
+        {
+            "platform": "TikTok",
+            "content": "Full rewritten post optimized for TikTok (short, punchy, hooks in first line, trending format)",
+            "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
+            "characterCount": 150,
+            "optimizationNotes": "Why this version works for TikTok"
+        },
+        {
+            "platform": "Instagram",
+            "content": "Full rewritten post optimized for Instagram (visual-first, story-driven, carousel-friendly)",
+            "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
+            "characterCount": 2200,
+            "optimizationNotes": "Why this version works for Instagram"
+        },
+        {
+            "platform": "X",
+            "content": "Full rewritten post optimized for X/Twitter (280 chars max, thread-starter potential, ratio-resistant)",
+            "hashtags": ["hashtag1", "hashtag2"],
+            "characterCount": 280,
+            "optimizationNotes": "Why this version works for X"
+        },
+        {
+            "platform": "LinkedIn",
+            "content": "Full rewritten post optimized for LinkedIn (professional tone, thought leadership, engagement questions)",
+            "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
+            "characterCount": 3000,
+            "optimizationNotes": "Why this version works for LinkedIn"
+        },
+        {
+            "platform": "Facebook",
+            "content": "Full rewritten post optimized for Facebook (community-focused, shareable, discussion-starter)",
+            "hashtags": ["hashtag1", "hashtag2"],
+            "characterCount": 500,
+            "optimizationNotes": "Why this version works for Facebook"
+        }
+    ],
+    "brandFriendlyVersions": [
+        "Brand-safe version 1: Conservative, no controversy, professional",
+        "Brand-safe version 2: Friendly tone, inclusive language",
+        "Brand-safe version 3: Educational focus, value-driven"
+    ],
+    "aggressiveVersions": [
+        "High-CTR version 1: Bold claims, strong hooks, urgency",
+        "High-CTR version 2: Controversial angle, polarizing",
+        "High-CTR version 3: Fear-based, problem-agitation-solution"
+    ]
+}
+
+IMPORTANT: Do NOT plagiarize. Only replicate STRUCTURE and PSYCHOLOGICAL MECHANICS. Create ORIGINAL content with the same viral DNA.`;
+
+    let rewriteResult: any = {};
+
+    try {
+        const rewriteResponse = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: rewritePrompt
+        }));
+
+        const responseText = rewriteResponse.text || "{}";
+        const jsonStr = cleanJsonString(responseText);
+        rewriteResult = JSON.parse(jsonStr);
+    } catch (e) {
+        console.error("Rewrite generation failed:", e);
+        rewriteResult = {
+            platformRewrites: [],
+            brandFriendlyVersions: [],
+            aggressiveVersions: []
+        };
+    }
+
+    // Enforce Twitter character limit on X platform rewrite
+    if (rewriteResult.platformRewrites) {
+        rewriteResult.platformRewrites = rewriteResult.platformRewrites.map((rewrite: any) => {
+            if (rewrite.platform === 'X' && rewrite.content) {
+                rewrite.content = enforceTwitterCharLimit(rewrite.content);
+                rewrite.characterCount = rewrite.content.length;
+            }
+            return rewrite;
+        });
+    }
+
+    onProgress("ANALYSIS COMPLETE!");
+
+    // Compile final result
+    const finalResult: ViralPostAnalysisResult = {
+        originalContent: postContent,
+        platform: detectedPlatform,
+        structure: analysisResult.structure || {
+            hookCategory: 'Curiosity' as HookCategory,
+            hookText: '',
+            sentenceRhythm: '',
+            lineBreakStrategy: '',
+            emojiPsychology: null,
+            pacingType: 'Medium' as PacingType,
+            contentLengthClass: 'Medium'
+        },
+        psychology: analysisResult.psychology || {
+            primaryEmotion: '',
+            secondaryEmotion: '',
+            patternInterrupt: '',
+            socialValidation: '',
+            urgencySignal: null,
+            scarcityTactic: null,
+            identityAppeal: ''
+        },
+        algorithmScore: analysisResult.algorithmScore || {
+            overall: 0,
+            engagementBaiting: { score: 0, reason: '' },
+            retentionTriggers: { score: 0, reason: '' },
+            rewatchFactor: { score: 0, reason: '' },
+            commentActivation: { score: 0, reason: '' },
+            shareMotivation: { score: 0, reason: '' }
+        },
+        conversionScore: analysisResult.conversionScore || {
+            overall: 0,
+            ctaClarity: { score: 0, reason: '' },
+            trustIndicators: { score: 0, reason: '' },
+            offerPositioning: { score: 0, reason: '' },
+            curiosityGap: { score: 0, reason: '' }
+        },
+        platformRewrites: rewriteResult.platformRewrites || [],
+        brandFriendlyVersions: rewriteResult.brandFriendlyVersions || [],
+        aggressiveVersions: rewriteResult.aggressiveVersions || [],
+        contentDNA: analysisResult.contentDNA || {
+            whyItWentViral: '',
+            commonMistakesCopying: '',
+            ethicalReplicationGuide: ''
+        },
+        matchingHooks: analysisResult.matchingHooks || [],
+        viralFormula: analysisResult.viralFormula || {
+            hookFormula: '',
+            structurePattern: '',
+            emotionalSequence: [],
+            ctaTemplate: '',
+            platformOptimizations: {}
+        },
+        visualTriggerType: analysisResult.visualTriggerType,
+        audienceIntent: (analysisResult.audienceIntent || 'Entertaining') as AudienceIntent
+    };
+
+    return finalResult;
+}
+
+// Generate a custom post from viral formula
+export async function generatePostFromViralFormula(
+    formula: ViralFormulaJSON,
+    topic: string,
+    platform: string,
+    tone: 'brand-friendly' | 'aggressive' | 'balanced'
+): Promise<string> {
+    const ai = getAiClient();
+
+    const prompt = `You are a viral content creator. Using this proven viral formula, create a NEW ORIGINAL post.
+
+VIRAL FORMULA:
+- Hook Formula: ${formula.hookFormula}
+- Structure Pattern: ${formula.structurePattern}
+- Emotional Sequence: ${formula.emotionalSequence.join(' → ')}
+- CTA Template: ${formula.ctaTemplate}
+- Platform Optimization: ${formula.platformOptimizations[platform] || 'Standard optimization'}
+
+TOPIC: ${topic}
+PLATFORM: ${platform}
+TONE: ${tone}
+
+Generate a post that:
+1. Uses the exact hook formula
+2. Follows the structure pattern
+3. Triggers the emotional sequence
+4. Ends with a CTA following the template
+5. Is optimized for ${platform}
+
+Return ONLY the post content. No explanation, no quotes, just the post.`;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        let result = (response.text || '').trim();
+
+        // Enforce platform limits
+        if (platform === 'X' || platform === 'Twitter') {
+            result = enforceTwitterCharLimit(result);
+        }
+
+        return result;
+    } catch (error) {
+        console.error("Post generation failed:", error);
+        throw new Error("Failed to generate post from viral formula");
+    }
+}
+
+// Generate matching hooks based on analyzed viral formula
+export async function generateMatchingHooks(
+    formula: ViralFormulaJSON,
+    topic: string,
+    count: number = 10
+): Promise<string[]> {
+    const ai = getAiClient();
+
+    const prompt = `You are a viral hook specialist. Generate ${count} viral hooks using this proven formula.
+
+HOOK FORMULA: ${formula.hookFormula}
+EMOTIONAL SEQUENCE STARTER: ${formula.emotionalSequence[0] || 'Curiosity'}
+
+TOPIC: ${topic}
+
+Generate ${count} unique hooks that:
+1. Follow the exact formula structure
+2. Trigger the target emotion immediately
+3. Create irresistible curiosity gaps
+4. Would work across multiple platforms
+
+Return as JSON array of strings (no markdown):
+["Hook 1", "Hook 2", "Hook 3", ...]`;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        const responseText = response.text || "[]";
+        const jsonStr = cleanJsonString(responseText);
+        return JSON.parse(jsonStr);
+    } catch (error) {
+        console.error("Hook generation failed:", error);
+        return [];
+    }
+}
+
+// Convert viral post to carousel format
+export async function convertViralPostToCarousel(
+    analysis: ViralPostAnalysisResult,
+    slideCount: number = 5
+): Promise<{ slides: { title: string; content: string }[]; caption: string }> {
+    const ai = getAiClient();
+
+    const prompt = `Convert this viral post into a ${slideCount}-slide carousel format.
+
+ORIGINAL POST:
+${analysis.originalContent}
+
+VIRAL ELEMENTS TO PRESERVE:
+- Hook: ${analysis.structure.hookText}
+- Emotional Sequence: ${analysis.viralFormula.emotionalSequence.join(' → ')}
+- CTA: ${analysis.viralFormula.ctaTemplate}
+
+Create a carousel structure:
+- Slide 1: Hook (attention-grabbing title)
+- Slides 2-${slideCount - 1}: Key points (one idea per slide)
+- Slide ${slideCount}: CTA slide
+
+Return JSON (no markdown):
+{
+    "slides": [
+        { "title": "Slide 1 title", "content": "Slide 1 content (max 20 words)" },
+        { "title": "Slide 2 title", "content": "Slide 2 content" },
+        ...
+    ],
+    "caption": "Engaging caption for the carousel post with hashtags"
+}`;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        const responseText = response.text || "{}";
+        const jsonStr = cleanJsonString(responseText);
+        return JSON.parse(jsonStr);
+    } catch (error) {
+        console.error("Carousel conversion failed:", error);
+        return { slides: [], caption: '' };
+    }
+}
+
+// Convert viral post to blog format
+export async function convertViralPostToBlog(
+    analysis: ViralPostAnalysisResult,
+    length: 'short' | 'medium' | 'long'
+): Promise<{ title: string; content: string; metaDescription: string }> {
+    const ai = getAiClient();
+
+    const wordCount = length === 'short' ? 500 : length === 'medium' ? 1000 : 2000;
+
+    const prompt = `Expand this viral social media post into a ${wordCount}-word blog article.
+
+ORIGINAL POST:
+${analysis.originalContent}
+
+VIRAL DNA TO PRESERVE:
+- Hook Formula: ${analysis.viralFormula.hookFormula}
+- Emotional Sequence: ${analysis.viralFormula.emotionalSequence.join(' → ')}
+- Why It Went Viral: ${analysis.contentDNA.whyItWentViral}
+
+Create a blog post that:
+1. Opens with a hook using the same formula
+2. Expands each point with depth and examples
+3. Maintains the emotional journey
+4. Includes subheadings for scannability
+5. Ends with a compelling CTA
+
+Return JSON (no markdown):
+{
+    "title": "SEO-optimized blog title",
+    "content": "Full markdown content with ## headings",
+    "metaDescription": "150-160 character meta description"
+}`;
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: prompt
+        }));
+
+        const responseText = response.text || "{}";
+        const jsonStr = cleanJsonString(responseText);
+        return JSON.parse(jsonStr);
+    } catch (error) {
+        console.error("Blog conversion failed:", error);
+        return { title: '', content: '', metaDescription: '' };
+    }
+}
+
+// Analyze image for visual viral triggers
+export async function analyzeViralImage(
+    imageBase64: string
+): Promise<{
+    visualTriggers: string[];
+    colorPsychology: string;
+    compositionAnalysis: string;
+    attentionFlow: string;
+    recommendations: string[];
+}> {
+    const ai = getAiClient();
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: {
+                parts: [
+                    {
+                        inlineData: {
+                            mimeType: 'image/png',
+                            data: imageBase64
+                        }
+                    },
+                    {
+                        text: `Analyze this social media image for viral potential.
+
+Return JSON (no markdown):
+{
+    "visualTriggers": ["trigger1", "trigger2", "trigger3"],
+    "colorPsychology": "Analysis of color choices and emotional impact",
+    "compositionAnalysis": "How the composition guides attention",
+    "attentionFlow": "Where the eye naturally goes and why",
+    "recommendations": ["improvement1", "improvement2", "improvement3"]
+}`
+                    }
+                ]
+            }
+        }));
+
+        const responseText = response.text || "{}";
+        const jsonStr = cleanJsonString(responseText);
+        return JSON.parse(jsonStr);
+    } catch (error) {
+        console.error("Image analysis failed:", error);
+        return {
+            visualTriggers: [],
+            colorPsychology: '',
+            compositionAnalysis: '',
+            attentionFlow: '',
+            recommendations: []
+        };
+    }
+}
