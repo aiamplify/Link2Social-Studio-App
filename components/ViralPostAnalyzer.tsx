@@ -10,7 +10,8 @@ import {
     convertViralPostToCarousel,
     convertViralPostToBlog,
     generatePostFromViralFormula,
-    analyzeViralImage
+    analyzeViralImage,
+    extractTextFromImage
 } from '../services/geminiService';
 import {
     ViralPostAnalysisResult,
@@ -18,7 +19,7 @@ import {
     PlatformRewrite
 } from '../types';
 import {
-    Loader2, AlertCircle, Copy, Check, Download, Upload, Link, FileText, Image as ImageIcon,
+    Loader2, AlertCircle, Copy, Check, Download, Upload, FileText, Image as ImageIcon,
     Sparkles, TrendingUp, Brain, Target, Zap, Heart, MessageSquare, Share2, Eye,
     ChevronDown, ChevronUp, RefreshCw, BookOpen, Layout, Layers, Save, ExternalLink,
     BarChart3, PieChart, Activity, Lightbulb, Award, Clock, Users, Hash, Globe,
@@ -149,12 +150,11 @@ const PlatformRewriteCard: React.FC<{
 
 const ViralPostAnalyzer: React.FC = () => {
     // Input state
-    const [inputMode, setInputMode] = useState<'url' | 'text' | 'image'>('url');
-    const [urlInput, setUrlInput] = useState('');
+    const [inputMode, setInputMode] = useState<'text' | 'image'>('text');
     const [textInput, setTextInput] = useState('');
     const [imageInput, setImageInput] = useState<string | null>(null);
     const [selectedPlatform, setSelectedPlatform] = useState<string>('');
-
+    const [extractedText, setExtractedText] = useState<string | null>(null);
     // Analysis state
     const [loading, setLoading] = useState(false);
     const [loadingStage, setLoadingStage] = useState('');
@@ -202,30 +202,42 @@ const ViralPostAnalyzer: React.FC = () => {
         setError(null);
         setResult(null);
         setImageAnalysis(null);
+        setExtractedText(null);
 
         try {
-            let input: { type: 'url' | 'text' | 'image'; content: string; platform?: string };
+            let input: { type: 'text' | 'image'; content: string; platform?: string };
+            let contentToAnalyze = '';
 
-            if (inputMode === 'url') {
-                if (!urlInput.trim()) {
-                    throw new Error('Please enter a valid URL');
-                }
-                input = { type: 'url', content: urlInput.trim() };
-            } else if (inputMode === 'text') {
+            if (inputMode === 'text') {
                 if (!textInput.trim()) {
                     throw new Error('Please enter post content');
                 }
-                input = { type: 'text', content: textInput.trim(), platform: selectedPlatform };
+                contentToAnalyze = textInput.trim();
+                input = { type: 'text', content: contentToAnalyze, platform: selectedPlatform };
             } else {
+                // Image mode - extract text first, then analyze
                 if (!imageInput) {
-                    throw new Error('Please upload an image');
+                    throw new Error('Please upload a screenshot');
                 }
-                input = { type: 'image', content: imageInput, platform: selectedPlatform };
 
-                // Also analyze the image
+                // Step 1: Extract text from the image using Gemini
+                setLoadingStage('EXTRACTING TEXT FROM IMAGE...');
+                const extracted = await extractTextFromImage(imageInput);
+
+                if (!extracted || extracted.trim().length < 10) {
+                    throw new Error('Could not extract enough text from the image. Please try a clearer screenshot or paste the text directly.');
+                }
+
+                setExtractedText(extracted);
+                contentToAnalyze = extracted;
+
+                // Step 2: Analyze visual elements
                 setLoadingStage('ANALYZING VISUAL ELEMENTS...');
                 const imgAnalysis = await analyzeViralImage(imageInput);
                 setImageAnalysis(imgAnalysis);
+
+                // Use the extracted text for analysis
+                input = { type: 'text', content: contentToAnalyze, platform: selectedPlatform };
             }
 
             const analysisResult = await analyzeViralPost(input, setLoadingStage);
@@ -370,9 +382,8 @@ CTA Template: ${result.viralFormula.ctaTemplate}
                 {/* Input Mode Tabs */}
                 <div className="flex gap-2">
                     {[
-                        { id: 'url', label: 'Social Post URL', icon: Link },
-                        { id: 'text', label: 'Raw Caption/Text', icon: FileText },
-                        { id: 'image', label: 'Image Upload', icon: ImageIcon },
+                        { id: 'text', label: 'Paste Text', icon: FileText },
+                        { id: 'image', label: 'Upload Screenshot', icon: ImageIcon },
                     ].map((mode) => (
                         <button
                             key={mode.id}
@@ -390,21 +401,6 @@ CTA Template: ${result.viralFormula.ctaTemplate}
                 </div>
 
                 {/* Input Fields */}
-                {inputMode === 'url' && (
-                    <div className="space-y-3">
-                        <label className="text-sm text-slate-400">
-                            Paste a viral post URL (TikTok, Instagram, X, Facebook, LinkedIn, YouTube)
-                        </label>
-                        <input
-                            type="url"
-                            value={urlInput}
-                            onChange={(e) => setUrlInput(e.target.value)}
-                            placeholder="https://twitter.com/user/status/..."
-                            className="w-full px-4 py-3 bg-slate-800/50 border border-white/10 rounded-xl text-white placeholder:text-slate-500 focus:outline-none focus:border-pink-500/50 transition-colors"
-                        />
-                    </div>
-                )}
-
                 {inputMode === 'text' && (
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -433,7 +429,10 @@ CTA Template: ${result.viralFormula.ctaTemplate}
                 {inputMode === 'image' && (
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                            <label className="text-sm text-slate-400">Upload a viral post image/screenshot</label>
+                            <div>
+                                <label className="text-sm text-slate-400">Upload a screenshot of a viral post</label>
+                                <p className="text-xs text-slate-500 mt-1">AI will extract the text and analyze it</p>
+                            </div>
                             <select
                                 value={selectedPlatform}
                                 onChange={(e) => setSelectedPlatform(e.target.value)}
@@ -460,13 +459,13 @@ CTA Template: ${result.viralFormula.ctaTemplate}
                                         alt="Uploaded"
                                         className="max-h-48 mx-auto rounded-lg"
                                     />
-                                    <p className="text-sm text-pink-400">Image uploaded. Click to change.</p>
+                                    <p className="text-sm text-pink-400">Screenshot uploaded. Click to change.</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
                                     <Upload className="w-12 h-12 mx-auto text-slate-500" />
-                                    <p className="text-slate-400">Click to upload or drag and drop</p>
-                                    <p className="text-xs text-slate-500">PNG, JPG up to 10MB</p>
+                                    <p className="text-slate-400">Click to upload a screenshot</p>
+                                    <p className="text-xs text-slate-500">PNG, JPG up to 10MB - Text will be extracted automatically</p>
                                 </div>
                             )}
                         </div>
@@ -539,7 +538,18 @@ CTA Template: ${result.viralFormula.ctaTemplate}
                             {/* Left Column */}
                             <div className="space-y-6">
                                 {/* Original Content */}
-                                <ExpandableSection title="Original Content" icon={FileText} badgeColor="slate" badge={result.platform}>
+                                <ExpandableSection
+                                    title={extractedText ? "Extracted Text" : "Original Content"}
+                                    icon={FileText}
+                                    badgeColor="slate"
+                                    badge={result.platform}
+                                >
+                                    {extractedText && (
+                                        <div className="mb-3 flex items-center gap-2 text-xs text-emerald-400">
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            <span>Text extracted from screenshot using AI</span>
+                                        </div>
+                                    )}
                                     <div className="bg-slate-800/50 rounded-lg p-4">
                                         <p className="text-slate-300 whitespace-pre-wrap text-sm">{result.originalContent}</p>
                                     </div>

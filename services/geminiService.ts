@@ -2640,3 +2640,56 @@ Return JSON (no markdown):
         };
     }
 }
+
+// Extract text content from a screenshot of a social media post
+export async function extractTextFromImage(imageBase64: string): Promise<string> {
+    const ai = getAiClient();
+
+    try {
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: {
+                parts: [
+                    {
+                        inlineData: {
+                            mimeType: 'image/png',
+                            data: imageBase64
+                        }
+                    },
+                    {
+                        text: `You are an expert at extracting text from social media post screenshots.
+
+Analyze this image and extract ALL visible text content from the social media post.
+
+IMPORTANT INSTRUCTIONS:
+1. Extract the MAIN POST CONTENT/CAPTION - this is the primary text of the post
+2. Include any visible hashtags
+3. Include emojis if present (they are part of the content)
+4. Preserve line breaks and formatting as much as possible
+5. Do NOT include:
+   - UI elements (like buttons, icons, timestamps)
+   - Username/handle (unless it's part of the post content)
+   - Engagement counts (likes, comments, shares)
+   - Platform navigation elements
+
+Return ONLY the extracted post text/caption content. No explanations, no JSON, just the raw text content exactly as it appears in the post.
+
+If the image doesn't contain readable social media post text, respond with: "NO_TEXT_FOUND"`
+                    }
+                ]
+            }
+        }));
+
+        const extractedText = response.text?.trim() || '';
+
+        // Check if extraction failed
+        if (extractedText === 'NO_TEXT_FOUND' || extractedText.length < 5) {
+            return '';
+        }
+
+        return extractedText;
+    } catch (error) {
+        console.error("Text extraction from image failed:", error);
+        throw new Error("Failed to extract text from image. Please try with a clearer screenshot.");
+    }
+}
