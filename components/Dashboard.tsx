@@ -10,6 +10,7 @@ import BlogToBlog from './BlogToBlog';
 import YouTubeThumbnail from './YouTubeThumbnail';
 import BrollCreator from './BrollCreator';
 import ScriptVisualizer from './ScriptVisualizer';
+import ViralPostAnalyzer from './ViralPostAnalyzer';
 import DraftManager from './DraftManager';
 import ScheduledPosts from './ScheduledPosts';
 import ContentBundleDrafts from './ContentBundleDrafts';
@@ -27,7 +28,7 @@ import {
     Activity, Target, Eye, MousePointer, Heart, MessageSquare, Repeat, BookOpen, Lightbulb, Rocket,
     Crown, Diamond, Award, Flame, Timer, CheckCircle2, AlertCircle, Info, HelpCircle, Keyboard,
     Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid, Archive,
-    CalendarCheck
+    CalendarCheck, Brain
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -156,6 +157,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
         { id: 'thumbnail', label: 'Viral Thumbnails', description: 'High CTR Designs', icon: Youtube, color: 'red', action: ViewMode.YOUTUBE_THUMBNAIL, shortcut: '⌘4' },
         { id: 'broll', label: 'B-Roll Creator', description: 'Cinematic Video', icon: Video, color: 'indigo', action: ViewMode.VIDEO_BROLL, shortcut: '⌘5' },
         { id: 'script', label: 'Script Visualizer', description: 'Storyboard Scenes', icon: Clapperboard, color: 'teal', action: ViewMode.VIDEO_SCRIPT_VISUALIZER, shortcut: '⌘6' },
+        { id: 'viral', label: 'Viral Analyzer', description: 'Reverse-Engineer Posts', icon: Brain, color: 'pink', action: ViewMode.VIRAL_POST_ANALYZER, shortcut: '⌘7' },
     ];
 
     // Keyboard shortcuts
@@ -170,7 +172,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
             // Quick navigation shortcuts
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
                 const num = parseInt(e.key);
-                if (num >= 1 && num <= 6) {
+                if (num >= 1 && num <= 7) {
                     e.preventDefault();
                     const action = quickActions[num - 1];
                     if (action) setCurrentView(action.action);
@@ -587,11 +589,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                                     <ChevronRight className="w-4 h-4 text-slate-600" />
                                     <span className="text-white font-medium">
                                         {quickActions.find(a => a.action === currentView)?.label ||
-                                         currentView === ViewMode.DRAFTS ? 'Drafts' :
+                                         (currentView === ViewMode.DRAFTS ? 'Drafts' :
                                          currentView === ViewMode.SCHEDULED ? 'Scheduled' :
                                          currentView === ViewMode.CONTENT_BUNDLE_DRAFTS ? 'Saved Bundles' :
                                          currentView === ViewMode.CONTENT_CALENDAR ? 'Content Calendar' :
-                                         'Home'}
+                                         currentView === ViewMode.VIRAL_POST_ANALYZER ? 'Viral Analyzer' :
+                                         'Home')}
                                     </span>
                                 </>
                             )}
@@ -831,6 +834,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                         {currentView === ViewMode.VIDEO_SCRIPT_VISUALIZER && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <ScriptVisualizer />
+                            </div>
+                        )}
+                        {currentView === ViewMode.VIRAL_POST_ANALYZER && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <ViralPostAnalyzer />
                             </div>
                         )}
                         {currentView === ViewMode.DRAFTS && (
