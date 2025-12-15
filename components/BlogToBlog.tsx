@@ -13,7 +13,8 @@ import {
     optimizeHeadings,
     optimizeKeywordDensity,
     optimizeReadability,
-    optimizeAllSEO
+    optimizeAllSEO,
+    styleBlankBlogPost
 } from '../services/geminiService';
 import { BlogPostResult, BlogVisual } from '../types';
 import { 
@@ -104,12 +105,17 @@ interface BlogToBlogProps {
 
 const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSchedule }) => {
     // Input Modes
-    const [inputMode, setInputMode] = useState<'url' | 'file' | 'topic'>('url');
+    const [inputMode, setInputMode] = useState<'url' | 'file' | 'topic' | 'blank'>('url');
     
     // Inputs
     const [urlInput, setUrlInput] = useState('');
     const [fileContent, setFileContent] = useState('');
     const [instructions, setInstructions] = useState('');
+
+    // Blank Post Inputs
+    const [blankTitle, setBlankTitle] = useState('');
+    const [blankContent, setBlankContent] = useState('');
+    const [blankImages, setBlankImages] = useState<{id: string; file: File; preview: string}[]>([]);
     
     // Configuration
     const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0].value);
@@ -171,6 +177,7 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
     // Refs
     const imageInputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const blankImagesInputRef = useRef<HTMLInputElement>(null);
 
     // Calculate SEO Score
     const calculateSEOScore = (): SEOScore => {
@@ -288,9 +295,32 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
         }
     };
 
+    // Handler for blank post multi-image upload
+    const handleBlankImagesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            const newImages = Array.from(files).map((file, idx) => ({
+                id: `blank_${Date.now()}_${idx}`,
+                file,
+                preview: URL.createObjectURL(file)
+            }));
+            setBlankImages(prev => [...prev, ...newImages]);
+        }
+        // Reset input to allow uploading same file again
+        if (e.target) e.target.value = '';
+    };
+
+    const removeBlankImage = (id: string) => {
+        setBlankImages(prev => {
+            const img = prev.find(i => i.id === id);
+            if (img) URL.revokeObjectURL(img.preview);
+            return prev.filter(i => i.id !== id);
+        });
+    };
+
     const handleGenerate = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
         if (inputMode === 'url' && !urlInput.trim()) {
             setError("Please provide a valid URL.");
             return;
@@ -303,40 +333,75 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
             setError("Please provide a topic or instructions for research.");
             return;
         }
-        
+        if (inputMode === 'blank' && (!blankTitle.trim() || !blankContent.trim())) {
+            setError("Please provide both a title and content for your blog post.");
+            return;
+        }
+
         setLoading(true);
         setError(null);
         setResult(null);
         setIsPublished(false);
         setViewMode('visual');
-        
+
         try {
             const styleToUse = selectedStyle.id === 'custom' ? customStyle : selectedStyle.name;
-            
-            let source: { type: 'url' | 'text' | 'topic', content: string };
-            if (inputMode === 'url') {
-                source = { type: 'url', content: urlInput };
-            } else if (inputMode === 'file') {
-                source = { type: 'text', content: fileContent };
-            } else {
-                source = { type: 'topic', content: instructions };
-            }
 
-            const data = await generateBlogFromArticle(
-                source,
-                instructions,
-                selectedLength,
-                imageCount,
-                styleToUse, 
-                selectedLanguage, 
-                (stage) => setLoadingStage(stage)
-            );
-            setResult(data);
-            setEditContent(data.content);
-            
-            // Auto-generate meta description if empty
-            if (!metaDescription && data.subtitle) {
-                setMetaDescription(data.subtitle.substring(0, 160));
+            // Handle blank post mode separately
+            if (inputMode === 'blank') {
+                // Convert uploaded images to base64
+                const imagePromises = blankImages.map(async (img) => {
+                    return new Promise<string>((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64 = (reader.result as string).split(',')[1];
+                            resolve(base64);
+                        };
+                        reader.readAsDataURL(img.file);
+                    });
+                });
+                const imageBase64Array = await Promise.all(imagePromises);
+
+                const data = await styleBlankBlogPost(
+                    blankTitle,
+                    blankContent,
+                    imageBase64Array,
+                    selectedLanguage,
+                    (stage) => setLoadingStage(stage)
+                );
+                setResult(data);
+                setEditContent(data.content);
+
+                // Auto-generate meta description if empty
+                if (!metaDescription && data.subtitle) {
+                    setMetaDescription(data.subtitle.substring(0, 160));
+                }
+            } else {
+                let source: { type: 'url' | 'text' | 'topic', content: string };
+                if (inputMode === 'url') {
+                    source = { type: 'url', content: urlInput };
+                } else if (inputMode === 'file') {
+                    source = { type: 'text', content: fileContent };
+                } else {
+                    source = { type: 'topic', content: instructions };
+                }
+
+                const data = await generateBlogFromArticle(
+                    source,
+                    instructions,
+                    selectedLength,
+                    imageCount,
+                    styleToUse,
+                    selectedLanguage,
+                    (stage) => setLoadingStage(stage)
+                );
+                setResult(data);
+                setEditContent(data.content);
+
+                // Auto-generate meta description if empty
+                if (!metaDescription && data.subtitle) {
+                    setMetaDescription(data.subtitle.substring(0, 160));
+                }
             }
         } catch (err: any) {
             setError(err.message || "Failed to remix blog post.");
@@ -724,9 +789,9 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                         <div className="flex gap-2 p-1 bg-slate-950/50 rounded-xl">
                             <button
                                 onClick={() => setInputMode('url')}
-                                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                                    inputMode === 'url' 
-                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' 
+                                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                                    inputMode === 'url'
+                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
                                         : 'text-slate-500 hover:text-white'
                                 }`}
                             >
@@ -734,9 +799,9 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                             </button>
                             <button
                                 onClick={() => setInputMode('file')}
-                                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                                    inputMode === 'file' 
-                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' 
+                                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                                    inputMode === 'file'
+                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
                                         : 'text-slate-500 hover:text-white'
                                 }`}
                             >
@@ -744,13 +809,23 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                             </button>
                             <button
                                 onClick={() => setInputMode('topic')}
-                                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                                    inputMode === 'topic' 
-                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' 
+                                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                                    inputMode === 'topic'
+                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
                                         : 'text-slate-500 hover:text-white'
                                 }`}
                             >
                                 <Search className="w-4 h-4" /> Topic
+                            </button>
+                            <button
+                                onClick={() => setInputMode('blank')}
+                                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                                    inputMode === 'blank'
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                        : 'text-slate-500 hover:text-white'
+                                }`}
+                            >
+                                <Plus className="w-4 h-4" /> Blank
                             </button>
                         </div>
 
@@ -793,21 +868,103 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                             </div>
                         )}
 
-                        {/* Instructions */}
-                        <div className="space-y-2">
-                            <label className="text-xs text-slate-500">
-                                {inputMode === 'topic' ? 'Topic & Instructions' : 'Writing Instructions'}
-                            </label>
-                            <textarea
-                                value={instructions}
-                                onChange={(e) => setInstructions(e.target.value)}
-                                placeholder={inputMode === 'topic' 
-                                    ? "Describe the topic you want researched and how the post should be written..." 
-                                    : "Describe how you want the post rewritten (e.g. 'More professional tone', 'Focus on key stats')..."
-                                }
-                                className="w-full h-24 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-500/50 resize-none"
-                            />
-                        </div>
+                        {/* Blank Post Inputs */}
+                        {inputMode === 'blank' && (
+                            <div className="space-y-4">
+                                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                                    <p className="text-xs text-emerald-300 flex items-center gap-2">
+                                        <Sparkles className="w-4 h-4" />
+                                        Add your own content and AI will professionally style it
+                                    </p>
+                                </div>
+
+                                {/* Title Input */}
+                                <div className="space-y-2">
+                                    <label className="text-xs text-slate-500">Blog Title</label>
+                                    <input
+                                        type="text"
+                                        value={blankTitle}
+                                        onChange={(e) => setBlankTitle(e.target.value)}
+                                        placeholder="Enter your blog post title..."
+                                        className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50"
+                                    />
+                                </div>
+
+                                {/* Content Input */}
+                                <div className="space-y-2">
+                                    <label className="text-xs text-slate-500">Blog Content</label>
+                                    <textarea
+                                        value={blankContent}
+                                        onChange={(e) => setBlankContent(e.target.value)}
+                                        placeholder="Paste or write your blog post content here. The AI will professionally style and format it..."
+                                        className="w-full h-48 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 resize-none"
+                                    />
+                                    <p className="text-xs text-slate-600">{blankContent.length} characters</p>
+                                </div>
+
+                                {/* Image Upload */}
+                                <div className="space-y-2">
+                                    <label className="text-xs text-slate-500">Upload Images (Optional)</label>
+                                    <input
+                                        ref={blankImagesInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={handleBlankImagesUpload}
+                                        className="hidden"
+                                    />
+                                    <button
+                                        onClick={() => blankImagesInputRef.current?.click()}
+                                        className="w-full h-20 border border-dashed border-white/10 rounded-xl bg-slate-950/30 hover:bg-white/5 hover:border-emerald-500/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
+                                    >
+                                        <ImageIcon className="w-6 h-6 text-slate-500" />
+                                        <span className="text-sm text-slate-400">Click to upload images</span>
+                                    </button>
+
+                                    {/* Uploaded Images Preview */}
+                                    {blankImages.length > 0 && (
+                                        <div className="grid grid-cols-3 gap-2 mt-3">
+                                            {blankImages.map((img) => (
+                                                <div key={img.id} className="relative group rounded-lg overflow-hidden border border-white/10">
+                                                    <img
+                                                        src={img.preview}
+                                                        alt="Upload preview"
+                                                        className="w-full h-20 object-cover"
+                                                    />
+                                                    <button
+                                                        onClick={() => removeBlankImage(img.id)}
+                                                        className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <p className="text-xs text-slate-600">
+                                        {blankImages.length} image{blankImages.length !== 1 ? 's' : ''} uploaded - AI will place them strategically
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Instructions - hide for blank mode */}
+                        {inputMode !== 'blank' && (
+                            <div className="space-y-2">
+                                <label className="text-xs text-slate-500">
+                                    {inputMode === 'topic' ? 'Topic & Instructions' : 'Writing Instructions'}
+                                </label>
+                                <textarea
+                                    value={instructions}
+                                    onChange={(e) => setInstructions(e.target.value)}
+                                    placeholder={inputMode === 'topic'
+                                        ? "Describe the topic you want researched and how the post should be written..."
+                                        : "Describe how you want the post rewritten (e.g. 'More professional tone', 'Focus on key stats')..."
+                                    }
+                                    className="w-full h-24 bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-500/50 resize-none"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {/* Content Settings */}
@@ -1035,7 +1192,7 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                     {/* Generate Button */}
                     <button
                         onClick={handleGenerate}
-                        disabled={loading || (inputMode === 'url' && !urlInput) || (inputMode === 'file' && !fileContent) || (inputMode === 'topic' && !instructions)}
+                        disabled={loading || (inputMode === 'url' && !urlInput) || (inputMode === 'file' && !fileContent) || (inputMode === 'topic' && !instructions) || (inputMode === 'blank' && (!blankTitle || !blankContent))}
                         className="w-full py-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white rounded-2xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40"
                     >
                         {loading ? (
