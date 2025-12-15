@@ -116,6 +116,8 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
     const [blankTitle, setBlankTitle] = useState('');
     const [blankContent, setBlankContent] = useState('');
     const [blankImages, setBlankImages] = useState<{id: string; file: File; preview: string}[]>([]);
+    const [blankImageMode, setBlankImageMode] = useState<'upload' | 'generate'>('upload');
+    const [blankImageCount, setBlankImageCount] = useState(3);
     
     // Configuration
     const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0].value);
@@ -349,24 +351,30 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
 
             // Handle blank post mode separately
             if (inputMode === 'blank') {
-                // Convert uploaded images to base64
-                const imagePromises = blankImages.map(async (img) => {
-                    return new Promise<string>((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const base64 = (reader.result as string).split(',')[1];
-                            resolve(base64);
-                        };
-                        reader.readAsDataURL(img.file);
+                let imageBase64Array: string[] = [];
+
+                // Only convert uploaded images if in upload mode
+                if (blankImageMode === 'upload' && blankImages.length > 0) {
+                    const imagePromises = blankImages.map(async (img) => {
+                        return new Promise<string>((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                                const base64 = (reader.result as string).split(',')[1];
+                                resolve(base64);
+                            };
+                            reader.readAsDataURL(img.file);
+                        });
                     });
-                });
-                const imageBase64Array = await Promise.all(imagePromises);
+                    imageBase64Array = await Promise.all(imagePromises);
+                }
 
                 const data = await styleBlankBlogPost(
                     blankTitle,
                     blankContent,
                     imageBase64Array,
                     selectedLanguage,
+                    blankImageMode === 'generate' ? blankImageCount : 0, // Pass image count for AI generation
+                    styleToUse, // Pass visual style for AI generation
                     (stage) => setLoadingStage(stage)
                 );
                 setResult(data);
@@ -902,48 +910,127 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                     <p className="text-xs text-slate-600">{blankContent.length} characters</p>
                                 </div>
 
-                                {/* Image Upload */}
-                                <div className="space-y-2">
-                                    <label className="text-xs text-slate-500">Upload Images (Optional)</label>
-                                    <input
-                                        ref={blankImagesInputRef}
-                                        type="file"
-                                        accept="image/*"
-                                        multiple
-                                        onChange={handleBlankImagesUpload}
-                                        className="hidden"
-                                    />
-                                    <button
-                                        onClick={() => blankImagesInputRef.current?.click()}
-                                        className="w-full h-20 border border-dashed border-white/10 rounded-xl bg-slate-950/30 hover:bg-white/5 hover:border-emerald-500/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
-                                    >
-                                        <ImageIcon className="w-6 h-6 text-slate-500" />
-                                        <span className="text-sm text-slate-400">Click to upload images</span>
-                                    </button>
+                                {/* Image Options */}
+                                <div className="space-y-3">
+                                    <label className="text-xs text-slate-500">Images</label>
 
-                                    {/* Uploaded Images Preview */}
-                                    {blankImages.length > 0 && (
-                                        <div className="grid grid-cols-3 gap-2 mt-3">
-                                            {blankImages.map((img) => (
-                                                <div key={img.id} className="relative group rounded-lg overflow-hidden border border-white/10">
-                                                    <img
-                                                        src={img.preview}
-                                                        alt="Upload preview"
-                                                        className="w-full h-20 object-cover"
-                                                    />
-                                                    <button
-                                                        onClick={() => removeBlankImage(img.id)}
-                                                        className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                    >
-                                                        <X className="w-3 h-3" />
-                                                    </button>
+                                    {/* Toggle between Upload and Generate */}
+                                    <div className="flex gap-2 p-1 bg-slate-950/50 rounded-xl">
+                                        <button
+                                            onClick={() => setBlankImageMode('upload')}
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                                blankImageMode === 'upload'
+                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                    : 'text-slate-500 hover:text-white'
+                                            }`}
+                                        >
+                                            <Upload className="w-4 h-4" /> Upload My Images
+                                        </button>
+                                        <button
+                                            onClick={() => setBlankImageMode('generate')}
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                                blankImageMode === 'generate'
+                                                    ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                                                    : 'text-slate-500 hover:text-white'
+                                            }`}
+                                        >
+                                            <Wand2 className="w-4 h-4" /> Generate with AI
+                                        </button>
+                                    </div>
+
+                                    {/* Upload Mode */}
+                                    {blankImageMode === 'upload' && (
+                                        <div className="space-y-2">
+                                            <input
+                                                ref={blankImagesInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                multiple
+                                                onChange={handleBlankImagesUpload}
+                                                className="hidden"
+                                            />
+                                            <button
+                                                onClick={() => blankImagesInputRef.current?.click()}
+                                                className="w-full h-20 border border-dashed border-white/10 rounded-xl bg-slate-950/30 hover:bg-white/5 hover:border-emerald-500/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
+                                            >
+                                                <ImageIcon className="w-6 h-6 text-slate-500" />
+                                                <span className="text-sm text-slate-400">Click to upload images</span>
+                                            </button>
+
+                                            {/* Uploaded Images Preview */}
+                                            {blankImages.length > 0 && (
+                                                <div className="grid grid-cols-3 gap-2 mt-3">
+                                                    {blankImages.map((img) => (
+                                                        <div key={img.id} className="relative group rounded-lg overflow-hidden border border-white/10">
+                                                            <img
+                                                                src={img.preview}
+                                                                alt="Upload preview"
+                                                                className="w-full h-20 object-cover"
+                                                            />
+                                                            <button
+                                                                onClick={() => removeBlankImage(img.id)}
+                                                                className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
+                                            )}
+                                            <p className="text-xs text-slate-600">
+                                                {blankImages.length} image{blankImages.length !== 1 ? 's' : ''} uploaded - AI will place them strategically
+                                            </p>
                                         </div>
                                     )}
-                                    <p className="text-xs text-slate-600">
-                                        {blankImages.length} image{blankImages.length !== 1 ? 's' : ''} uploaded - AI will place them strategically
-                                    </p>
+
+                                    {/* Generate Mode */}
+                                    {blankImageMode === 'generate' && (
+                                        <div className="space-y-3">
+                                            <div className="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                                                <p className="text-xs text-violet-300 flex items-center gap-2">
+                                                    <Sparkles className="w-4 h-4" />
+                                                    Nano Banana Pro will create custom images for your blog
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-slate-500">Number of Images to Generate</label>
+                                                <select
+                                                    value={blankImageCount}
+                                                    onChange={(e) => setBlankImageCount(parseInt(e.target.value))}
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-violet-500/50"
+                                                >
+                                                    {[1, 2, 3, 5, 8, 10].map(num => (
+                                                        <option key={num} value={num}>{num} Image{num !== 1 ? 's' : ''}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Visual Style for Generated Images */}
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-slate-500">Image Style</label>
+                                                <select
+                                                    value={selectedStyle.id}
+                                                    onChange={(e) => setSelectedStyle(VISUAL_STYLES.find(s => s.id === e.target.value) || VISUAL_STYLES[0])}
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-violet-500/50"
+                                                >
+                                                    {VISUAL_STYLES.map(style => (
+                                                        <option key={style.id} value={style.id}>{style.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {selectedStyle.id === 'custom' && (
+                                                <input
+                                                    type="text"
+                                                    value={customStyle}
+                                                    onChange={(e) => setCustomStyle(e.target.value)}
+                                                    placeholder="Describe your custom visual style..."
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200"
+                                                />
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
