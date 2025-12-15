@@ -1128,20 +1128,25 @@ export async function regenerateBlogVisual(
 /**
  * Styles and transforms a user-provided blank blog post into a professionally formatted post.
  * Uses Gemini 3 Pro to enhance the content, add proper formatting, and strategically place images.
+ * Can use uploaded images OR generate new images with Nano Banana Pro (Gemini image generation).
  */
 export async function styleBlankBlogPost(
     userTitle: string,
     userContent: string,
-    uploadedImages: string[], // Array of base64-encoded images
+    uploadedImages: string[], // Array of base64-encoded images (empty if generating)
     language: string,
+    generateImageCount: number, // Number of images to generate (0 if using uploaded images)
+    visualStyle: string, // Style for generated images
     onProgress: (stage: string) => void
 ): Promise<BlogPostResult> {
     const ai = getAiClient();
 
     onProgress("ANALYZING YOUR CONTENT...");
 
-    const imageCount = uploadedImages.length;
-    const hasImages = imageCount > 0;
+    const hasUploadedImages = uploadedImages.length > 0;
+    const shouldGenerateImages = generateImageCount > 0 && !hasUploadedImages;
+    const totalImageCount = hasUploadedImages ? uploadedImages.length : generateImageCount;
+    const hasImages = totalImageCount > 0;
 
     // Create the styling prompt
     const stylingPrompt = `
@@ -1153,7 +1158,7 @@ export async function styleBlankBlogPost(
     USER'S ORIGINAL CONTENT:
     "${userContent}"
 
-    ${hasImages ? `The user has provided ${imageCount} image(s) that must be strategically placed throughout the post.` : ''}
+    ${hasImages ? `The blog will have ${totalImageCount} image(s) that must be strategically placed throughout the post.` : ''}
 
     YOUR TASK:
     1. PRESERVE the user's core message, facts, and voice - do NOT change the fundamental meaning or add new information
@@ -1202,7 +1207,6 @@ export async function styleBlankBlogPost(
     - Distribute remaining images ([[IMAGE_2]], [[IMAGE_3]], etc.) evenly throughout
     - Place images AFTER paragraphs that are visually relevant
     - Each image should enhance the reading experience at that point
-    - Generate descriptive captions for each image based on the surrounding content
     ` : ''}
 
     The styled blog post must be in ${language}.
@@ -1217,12 +1221,12 @@ export async function styleBlankBlogPost(
     |||METADATA|||
     (Insert "Author | Today | Category" - infer the category from content)
     |||CONTENT|||
-    (The professionally styled markdown content with [[IMAGE_X]] placeholders if images were provided)
+    (The professionally styled markdown content with [[IMAGE_X]] placeholders if images are being used)
     ${hasImages ? `
     |||VISUALS|||
-    (For each image, provide a caption in this format:)
-    1. CAPTION: [Descriptive caption for image 1 based on its placement context]
-    2. CAPTION: [Descriptive caption for image 2 based on its placement context]
+    (For each image, provide BOTH a generation prompt AND a caption in this format:)
+    1. PROMPT: [Detailed prompt describing what image to generate - be specific about subject, composition, mood] || CAPTION: [Descriptive caption for the image]
+    2. PROMPT: [Detailed prompt for image 2] || CAPTION: [Caption for image 2]
     ...
     ` : ''}
     `;
@@ -1260,20 +1264,50 @@ export async function styleBlankBlogPost(
             if (metaPart) metadata = metaPart;
             if (contentPart) content = contentPart;
 
-            // Parse visual captions and assign uploaded images
+            // Parse visual information
             if (hasImages) {
-                const captionLines = visualPart.split('\n').filter(l => l.includes("CAPTION:"));
-                visuals = uploadedImages.map((imgData, idx) => {
-                    const captionLine = captionLines[idx] || "";
-                    const captionMatch = captionLine.match(/CAPTION:\s*(.*)/);
-                    return {
-                        id: idx === 0 ? "header" : `image_${idx}`,
-                        prompt: `User uploaded image ${idx + 1}`,
-                        caption: captionMatch ? captionMatch[1].trim() : `Image ${idx + 1}`,
-                        imageData: imgData,
-                        status: 'complete' as const
-                    };
-                });
+                const visualLines = visualPart.split('\n').filter(l => l.includes("PROMPT:") || l.includes("CAPTION:"));
+
+                if (hasUploadedImages) {
+                    // User uploaded images - just need captions
+                    const captionLines = visualPart.split('\n').filter(l => l.includes("CAPTION:"));
+                    visuals = uploadedImages.map((imgData, idx) => {
+                        const captionLine = captionLines[idx] || "";
+                        const captionMatch = captionLine.match(/CAPTION:\s*(.*)/);
+                        return {
+                            id: idx === 0 ? "header" : `image_${idx}`,
+                            prompt: `User uploaded image ${idx + 1}`,
+                            caption: captionMatch ? captionMatch[1].trim() : `Image ${idx + 1}`,
+                            imageData: imgData,
+                            status: 'complete' as const
+                        };
+                    });
+                } else {
+                    // Need to generate images - parse prompts and captions
+                    const promptCaptionLines = visualPart.split('\n').filter(l => l.includes("PROMPT:") && l.includes("CAPTION:"));
+                    visuals = promptCaptionLines.slice(0, totalImageCount).map((line, idx) => {
+                        const promptMatch = line.match(/PROMPT:\s*(.*?)\s*\|\|\s*CAPTION:\s*(.*)/);
+                        return {
+                            id: idx === 0 ? "header" : `image_${idx}`,
+                            prompt: promptMatch ? promptMatch[1].trim() : `Image for ${title}`,
+                            caption: promptMatch ? promptMatch[2].trim() : `Image ${idx + 1}`,
+                            imageData: null,
+                            status: 'pending' as const
+                        };
+                    });
+
+                    // Fill in any missing visual slots
+                    while (visuals.length < totalImageCount) {
+                        const idx = visuals.length;
+                        visuals.push({
+                            id: idx === 0 ? "header" : `image_${idx}`,
+                            prompt: `A professional illustration related to: ${title}`,
+                            caption: `Image ${idx + 1}`,
+                            imageData: null,
+                            status: 'pending' as const
+                        });
+                    }
+                }
             }
         } else {
             // Fallback
@@ -1281,7 +1315,7 @@ export async function styleBlankBlogPost(
             content = fullText;
 
             // Still assign user images if provided
-            if (hasImages) {
+            if (hasUploadedImages) {
                 visuals = uploadedImages.map((imgData, idx) => ({
                     id: idx === 0 ? "header" : `image_${idx}`,
                     prompt: `User uploaded image ${idx + 1}`,
@@ -1289,10 +1323,66 @@ export async function styleBlankBlogPost(
                     imageData: imgData,
                     status: 'complete' as const
                 }));
+            } else if (shouldGenerateImages) {
+                // Create placeholder visuals for generation
+                for (let i = 0; i < totalImageCount; i++) {
+                    visuals.push({
+                        id: i === 0 ? "header" : `image_${i}`,
+                        prompt: `A professional illustration for a blog post about: ${title}`,
+                        caption: `Image ${i + 1}`,
+                        imageData: null,
+                        status: 'pending' as const
+                    });
+                }
             }
         }
 
         if (!content) throw new Error("Failed to style content.");
+
+        // Generate images if needed (Nano Banana Pro)
+        if (shouldGenerateImages && visuals.length > 0) {
+            onProgress(`GENERATING ${visuals.length} IMAGES WITH NANO BANANA PRO...`);
+
+            const imagePromises = visuals.map(async (vis, idx): Promise<BlogVisual> => {
+                const isHeader = idx === 0;
+                const aspectRatio = isHeader ? "16:9" : "4:3";
+
+                const finalImagePrompt = `
+                Create a high-quality ${isHeader ? "header image" : "editorial illustration"} for a blog post.
+
+                SUBJECT: ${vis.prompt}
+
+                STYLE: ${visualStyle === 'Photorealistic' ? 'Cinematic, Photorealistic, 4k, High Detail' : visualStyle === 'Graphic Novel' ? 'Comic Book Style, Graphic Novel, Vibrant, Ink Lines' : visualStyle}
+                `;
+
+                try {
+                    const imgResponse = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+                        model: 'gemini-3-pro-image-preview',
+                        contents: { parts: [{ text: finalImagePrompt }] },
+                        config: {
+                            responseModalities: [Modality.IMAGE],
+                            imageConfig: {
+                                aspectRatio: aspectRatio
+                            }
+                        }
+                    }));
+
+                    if (imgResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+                        return {
+                            ...vis,
+                            imageData: imgResponse.candidates[0].content.parts[0].inlineData.data,
+                            status: 'complete'
+                        };
+                    }
+                } catch (e) {
+                    console.warn(`Image generation failed for visual ${idx}`, e);
+                    return { ...vis, status: 'error' };
+                }
+                return { ...vis, status: 'complete' };
+            });
+
+            visuals = await Promise.all(imagePromises);
+        }
 
         onProgress("FINALIZING...");
 
