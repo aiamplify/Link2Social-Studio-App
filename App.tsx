@@ -86,10 +86,6 @@ const App: React.FC = () => {
 
   // On mount, validate session state consistency
   useEffect(() => {
-    // If authenticated but not on dashboard, redirect to dashboard
-    if (isAuthenticated && appView !== 'dashboard') {
-      setAppView('dashboard');
-    }
     // If not authenticated but on dashboard, redirect to website
     if (!isAuthenticated && appView === 'dashboard') {
       setAppView('website');
@@ -142,24 +138,37 @@ const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Navigate to dashboard (when already authenticated)
+  const handleDashboardClick = () => {
+    setAppView('dashboard');
+  };
+
+  // Navigate from dashboard to view blog
+  const handleViewBlog = () => {
+    setAppView('website');
+    setCurrentPage('blog');
+  };
+
   // --- LOGIN VIEW (UNCHANGED) ---
   if (appView === 'login') {
     return <Login onLogin={handleLogin} onCancel={handleCancelLogin} error={loginError} />;
   }
 
-  // --- DASHBOARD VIEW (UNCHANGED - AI Tools Backend) ---
+  // --- DASHBOARD VIEW (AI Tools Backend) ---
   if (appView === 'dashboard' && isAuthenticated) {
-    return <Dashboard onPublishPost={handlePublishPost} onLogout={handleLogout} />;
+    return <Dashboard onPublishPost={handlePublishPost} onLogout={handleLogout} onViewBlog={handleViewBlog} />;
   }
 
   // --- MAIN WEBSITE VIEW ---
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-violet-500/30">
       {/* Navigation */}
-      <Navigation 
-        currentPage={currentPage} 
+      <Navigation
+        currentPage={currentPage}
         onNavigate={handleNavigate}
         onLoginClick={handleLoginClick}
+        isAuthenticated={isAuthenticated}
+        onDashboardClick={handleDashboardClick}
       />
 
       {/* Page Content */}
@@ -181,7 +190,12 @@ const App: React.FC = () => {
         )}
         
         {currentPage === 'blog' && (
-          <BlogPage posts={publishedPosts} onNavigate={handleNavigate} />
+          <BlogPage
+            posts={publishedPosts}
+            onNavigate={handleNavigate}
+            isAuthenticated={isAuthenticated}
+            onDashboardClick={handleDashboardClick}
+          />
         )}
         
         {currentPage === 'contact' && (
