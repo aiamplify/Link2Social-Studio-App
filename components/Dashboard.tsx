@@ -28,12 +28,13 @@ import {
     Activity, Target, Eye, MousePointer, Heart, MessageSquare, Repeat, BookOpen, Lightbulb, Rocket,
     Crown, Diamond, Award, Flame, Timer, CheckCircle2, AlertCircle, Info, HelpCircle, Keyboard,
     Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid, Archive,
-    CalendarCheck, Brain
+    CalendarCheck, Brain, Globe
 } from 'lucide-react';
 
 interface DashboardProps {
     onPublishPost: (post: BlogPostResult) => void;
     onLogout: () => void;
+    onViewBlog?: () => void;
 }
 
 interface QuickAction {
@@ -89,7 +90,7 @@ const setStoredValue = <T,>(key: string, value: T): void => {
     }
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout, onViewBlog }) => {
     // Initialize view state from localStorage for persistence across refreshes
     const [currentView, setCurrentView] = useState<ViewMode>(() =>
         getStoredValue<ViewMode>(DASHBOARD_KEYS.CURRENT_VIEW, ViewMode.HOME)
@@ -559,8 +560,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout }) => {
                                 </button>
                                 
                                 <button
+                                    onClick={onViewBlog}
+                                    className="p-2 rounded-lg hover:bg-violet-500/10 text-slate-400 hover:text-violet-400 transition-colors ml-auto"
+                                    title="View Blog"
+                                >
+                                    <Globe className="w-5 h-5" />
+                                </button>
+
+                                <button
                                     onClick={onLogout}
-                                    className="p-2 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors ml-auto"
+                                    className="p-2 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
                                     title="Logout"
                                 >
                                     <LogOut className="w-5 h-5" />

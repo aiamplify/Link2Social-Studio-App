@@ -5,17 +5,19 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { PublishedPost } from '../types';
-import { 
-  ArrowRight, Clock, User, ChevronLeft, BookOpen, Share2, 
-  Sparkles, Search, Tag, TrendingUp, Calendar, X, Quote
+import {
+  ArrowRight, Clock, User, ChevronLeft, BookOpen, Share2,
+  Sparkles, Search, Tag, TrendingUp, Calendar, X, Quote, LayoutDashboard
 } from 'lucide-react';
 
 interface BlogPageProps {
   posts: PublishedPost[];
   onNavigate: (page: 'contact') => void;
+  isAuthenticated?: boolean;
+  onDashboardClick?: () => void;
 }
 
-const BlogPage: React.FC<BlogPageProps> = ({ posts, onNavigate }) => {
+const BlogPage: React.FC<BlogPageProps> = ({ posts, onNavigate, isAuthenticated, onDashboardClick }) => {
   const [activePost, setActivePost] = useState<PublishedPost | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -131,14 +133,24 @@ const BlogPage: React.FC<BlogPageProps> = ({ posts, onNavigate }) => {
         {/* Nav Overlay */}
         <nav className="sticky top-0 z-[100] bg-slate-950/80 backdrop-blur-xl border-b border-white/5 transition-all">
           <div className="max-w-4xl mx-auto px-6 py-4 flex justify-between items-center">
-            <button 
-              onClick={() => setActivePost(null)} 
+            <button
+              onClick={() => setActivePost(null)}
               className="group flex items-center gap-2 text-slate-400 hover:text-white font-sans font-medium transition-colors px-3 py-1.5 rounded-full hover:bg-white/5"
             >
-              <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" /> 
+              <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               <span>Back to Blog</span>
             </button>
             <div className="flex gap-2">
+              {isAuthenticated && onDashboardClick && (
+                <button
+                  onClick={onDashboardClick}
+                  className="flex items-center gap-2 px-3 py-1.5 text-emerald-400 hover:text-emerald-300 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors font-sans text-sm font-medium"
+                  title="Dashboard"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span>Dashboard</span>
+                </button>
+              )}
               <button className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/5 transition-colors" title="Share">
                 <Share2 className="w-5 h-5" />
               </button>

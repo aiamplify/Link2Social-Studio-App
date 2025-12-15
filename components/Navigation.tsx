@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Sparkles } from 'lucide-react';
+import { Menu, X, Sparkles, LayoutDashboard } from 'lucide-react';
 
 export type PageType = 'home' | 'about' | 'services' | 'portfolio' | 'blog' | 'contact';
 
@@ -12,9 +12,11 @@ interface NavigationProps {
   currentPage: PageType;
   onNavigate: (page: PageType) => void;
   onLoginClick: () => void;
+  isAuthenticated?: boolean;
+  onDashboardClick?: () => void;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ currentPage, onNavigate, onLoginClick }) => {
+const Navigation: React.FC<NavigationProps> = ({ currentPage, onNavigate, onLoginClick, isAuthenticated, onDashboardClick }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -91,12 +93,22 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onNavigate, onLogi
 
           {/* CTA Button */}
           <div className="hidden md:flex items-center gap-4">
-            <button
-              onClick={onLoginClick}
-              className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
-            >
-              AI Studio
-            </button>
+            {isAuthenticated ? (
+              <button
+                onClick={onDashboardClick}
+                className="px-4 py-2 text-sm text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-2 bg-emerald-500/10 rounded-full border border-emerald-500/20"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                Dashboard
+              </button>
+            ) : (
+              <button
+                onClick={onLoginClick}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                AI Studio
+              </button>
+            )}
             <button
               onClick={() => handleNavClick('contact')}
               className="px-6 py-2.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-full text-sm font-semibold hover:shadow-lg hover:shadow-violet-500/25 transition-all duration-300 hover:scale-105"
@@ -141,17 +153,35 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onNavigate, onLogi
               {item.label}
             </button>
           ))}
-          <button
-            onClick={onLoginClick}
-            className="mt-8 px-8 py-3 bg-white/10 border border-white/20 text-white rounded-full text-lg font-medium"
-            style={{ 
-              transitionDelay: isMobileMenuOpen ? '300ms' : '0ms',
-              transform: isMobileMenuOpen ? 'translateY(0)' : 'translateY(20px)',
-              opacity: isMobileMenuOpen ? 1 : 0
-            }}
-          >
-            AI Studio Login
-          </button>
+          {isAuthenticated ? (
+            <button
+              onClick={() => {
+                onDashboardClick?.();
+                setIsMobileMenuOpen(false);
+              }}
+              className="mt-8 px-8 py-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-full text-lg font-medium flex items-center gap-2"
+              style={{
+                transitionDelay: isMobileMenuOpen ? '300ms' : '0ms',
+                transform: isMobileMenuOpen ? 'translateY(0)' : 'translateY(20px)',
+                opacity: isMobileMenuOpen ? 1 : 0
+              }}
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              Dashboard
+            </button>
+          ) : (
+            <button
+              onClick={onLoginClick}
+              className="mt-8 px-8 py-3 bg-white/10 border border-white/20 text-white rounded-full text-lg font-medium"
+              style={{
+                transitionDelay: isMobileMenuOpen ? '300ms' : '0ms',
+                transform: isMobileMenuOpen ? 'translateY(0)' : 'translateY(20px)',
+                opacity: isMobileMenuOpen ? 1 : 0
+              }}
+            >
+              AI Studio Login
+            </button>
+          )}
         </div>
       </div>
     </>
