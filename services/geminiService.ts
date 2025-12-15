@@ -1125,6 +1125,191 @@ export async function regenerateBlogVisual(
     return null;
 }
 
+/**
+ * Styles and transforms a user-provided blank blog post into a professionally formatted post.
+ * Uses Gemini 3 Pro to enhance the content, add proper formatting, and strategically place images.
+ */
+export async function styleBlankBlogPost(
+    userTitle: string,
+    userContent: string,
+    uploadedImages: string[], // Array of base64-encoded images
+    language: string,
+    onProgress: (stage: string) => void
+): Promise<BlogPostResult> {
+    const ai = getAiClient();
+
+    onProgress("ANALYZING YOUR CONTENT...");
+
+    const imageCount = uploadedImages.length;
+    const hasImages = imageCount > 0;
+
+    // Create the styling prompt
+    const stylingPrompt = `
+    You are an expert professional blog editor and content stylist. Your task is to take a user's raw blog post and transform it into a beautifully formatted, professional-looking blog post.
+
+    USER'S ORIGINAL TITLE:
+    "${userTitle}"
+
+    USER'S ORIGINAL CONTENT:
+    "${userContent}"
+
+    ${hasImages ? `The user has provided ${imageCount} image(s) that must be strategically placed throughout the post.` : ''}
+
+    YOUR TASK:
+    1. PRESERVE the user's core message, facts, and voice - do NOT change the fundamental meaning or add new information
+    2. PROFESSIONALLY STYLE the content with proper formatting, structure, and flow
+    3. IMPROVE readability with better paragraph breaks, transitions, and sentence structure where needed
+    4. ADD proper markdown formatting (headers, bold, lists, etc.) following professional blog standards
+    5. POLISH any rough areas while keeping the author's authentic voice
+    6. CREATE an engaging subtitle based on the content
+    ${hasImages ? `7. INSERT image placeholders [[IMAGE_1]], [[IMAGE_2]], etc. at the most relevant and visually appealing positions in the content` : ''}
+
+    ===== PROFESSIONAL STYLING REQUIREMENTS (CRITICAL - FOLLOW EXACTLY) =====
+
+    **HEADER HIERARCHY:**
+    - Use ## for NUMBERED major section titles (e.g., "## 1. Introduction", "## 2. Key Points")
+    - Use ### for subsection titles and feature callouts
+    - Section numbers create scannable, organized content structure
+    - If the content doesn't have clear sections, create logical divisions
+
+    **HYPERLINKS (BLUE TEXT):**
+    - If the user mentions products, services, or concepts that would benefit from links, format them as [linked text](url) placeholders
+    - Use placeholder URLs like [Product Name](https://example.com) that the user can later update
+    - Links appear as blue clickable text
+
+    **BOLD TEXT FOR EMPHASIS:**
+    - Use **bold text** for:
+      - Key points and important phrases
+      - Category labels that start bullet points
+      - Names of products, features, or concepts that need emphasis
+
+    **HIGHLIGHTED TERMINOLOGY:**
+    - Use <span class="blue">text</span> for key concepts or terminology that should stand out in BLUE but are NOT links
+    - Use sparingly for maximum impact
+
+    **BULLETED LISTS:**
+    - Convert any list-like content into proper bulleted lists (-)
+    - Each bullet should start with a **bold label** when appropriate
+
+    **PARAGRAPH STRUCTURE:**
+    - Short, scannable paragraphs (2-4 sentences max)
+    - Clear topic sentences
+    - Generous spacing between sections
+
+    ${hasImages ? `
+    **IMAGE PLACEMENT:**
+    - Place [[IMAGE_1]] as the first image after the introduction
+    - Distribute remaining images ([[IMAGE_2]], [[IMAGE_3]], etc.) evenly throughout
+    - Place images AFTER paragraphs that are visually relevant
+    - Each image should enhance the reading experience at that point
+    - Generate descriptive captions for each image based on the surrounding content
+    ` : ''}
+
+    The styled blog post must be in ${language}.
+
+    RETURN FORMAT:
+    Use strict delimiters.
+
+    |||TITLE|||
+    (The polished title - can be the same or slightly improved version of the user's title)
+    |||SUBTITLE|||
+    (A compelling subtitle that captures the essence of the content)
+    |||METADATA|||
+    (Insert "Author | Today | Category" - infer the category from content)
+    |||CONTENT|||
+    (The professionally styled markdown content with [[IMAGE_X]] placeholders if images were provided)
+    ${hasImages ? `
+    |||VISUALS|||
+    (For each image, provide a caption in this format:)
+    1. CAPTION: [Descriptive caption for image 1 based on its placement context]
+    2. CAPTION: [Descriptive caption for image 2 based on its placement context]
+    ...
+    ` : ''}
+    `;
+
+    let visuals: BlogVisual[] = [];
+    let content = "";
+    let title = userTitle;
+    let subtitle = "";
+    let metadata = "Author | Today | General";
+
+    try {
+        onProgress("STYLING YOUR CONTENT...");
+
+        const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: stylingPrompt,
+        }));
+
+        const fullText = response.text || "";
+
+        // Parse delimiters
+        if (fullText.includes("|||CONTENT|||")) {
+            const parts = hasImages ? fullText.split("|||VISUALS|||") : [fullText, ""];
+            const mainBody = parts[0];
+            const visualPart = parts[1] ? parts[1].trim() : "";
+
+            // Extract metadata fields
+            const titlePart = mainBody.split("|||TITLE|||")[1]?.split("|||SUBTITLE|||")[0]?.trim();
+            const subtitlePart = mainBody.split("|||SUBTITLE|||")[1]?.split("|||METADATA|||")[0]?.trim();
+            const metaPart = mainBody.split("|||METADATA|||")[1]?.split("|||CONTENT|||")[0]?.trim();
+            const contentPart = mainBody.split("|||CONTENT|||")[1]?.trim();
+
+            if (titlePart) title = titlePart;
+            if (subtitlePart) subtitle = subtitlePart;
+            if (metaPart) metadata = metaPart;
+            if (contentPart) content = contentPart;
+
+            // Parse visual captions and assign uploaded images
+            if (hasImages) {
+                const captionLines = visualPart.split('\n').filter(l => l.includes("CAPTION:"));
+                visuals = uploadedImages.map((imgData, idx) => {
+                    const captionLine = captionLines[idx] || "";
+                    const captionMatch = captionLine.match(/CAPTION:\s*(.*)/);
+                    return {
+                        id: idx === 0 ? "header" : `image_${idx}`,
+                        prompt: `User uploaded image ${idx + 1}`,
+                        caption: captionMatch ? captionMatch[1].trim() : `Image ${idx + 1}`,
+                        imageData: imgData,
+                        status: 'complete' as const
+                    };
+                });
+            }
+        } else {
+            // Fallback
+            console.warn("Delimiters failed, using raw text");
+            content = fullText;
+
+            // Still assign user images if provided
+            if (hasImages) {
+                visuals = uploadedImages.map((imgData, idx) => ({
+                    id: idx === 0 ? "header" : `image_${idx}`,
+                    prompt: `User uploaded image ${idx + 1}`,
+                    caption: `Image ${idx + 1}`,
+                    imageData: imgData,
+                    status: 'complete' as const
+                }));
+            }
+        }
+
+        if (!content) throw new Error("Failed to style content.");
+
+        onProgress("FINALIZING...");
+
+    } catch (e) {
+        console.error("Blank blog styling failed", e);
+        throw new Error("Could not style your blog post. " + (e as Error).message);
+    }
+
+    return {
+        title: title,
+        subtitle: subtitle,
+        metadata: metadata,
+        content: content,
+        visuals: visuals
+    };
+}
+
 export async function generateBlogFromVideo(
     videoUrl: string,
     visualStyle: string,
