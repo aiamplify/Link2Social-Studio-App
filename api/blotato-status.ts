@@ -6,8 +6,8 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Blotato API configuration
-const BLOTATO_API_URL = process.env.BLOTATO_API_URL || 'https://api.blotato.com/v1';
+// Blotato API configuration - correct URL is backend.blotato.com/v2
+const BLOTATO_API_URL = process.env.BLOTATO_API_URL || 'https://backend.blotato.com/v2';
 const BLOTATO_API_KEY = process.env.BLOTATO_API_KEY || '';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -38,11 +38,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         console.log(`Getting Blotato status for: ${scheduleId}`);
 
-        // Make request to Blotato API
-        const response = await fetch(`${BLOTATO_API_URL}/schedule/${scheduleId}/status`, {
+        // Make request to Blotato API v2
+        const response = await fetch(`${BLOTATO_API_URL}/posts/${scheduleId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${BLOTATO_API_KEY}`,
+                'blotato-api-key': BLOTATO_API_KEY,
                 'Content-Type': 'application/json',
             }
         });

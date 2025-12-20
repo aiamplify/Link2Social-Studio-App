@@ -18,8 +18,8 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL ||
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Blotato API configuration
-const BLOTATO_API_URL = process.env.BLOTATO_API_URL || 'https://api.blotato.com/v1';
+// Blotato API configuration - correct URL is backend.blotato.com/v2
+const BLOTATO_API_URL = process.env.BLOTATO_API_URL || 'https://backend.blotato.com/v2';
 const BLOTATO_API_KEY = process.env.BLOTATO_API_KEY || '';
 
 interface CalendarPost {
@@ -55,10 +55,11 @@ async function getBlotatoStatus(scheduleId: string): Promise<BlotatoStatusRespon
     }
 
     try {
-        const response = await fetch(`${BLOTATO_API_URL}/schedule/${scheduleId}/status`, {
+        // Blotato API v2 - get post status
+        const response = await fetch(`${BLOTATO_API_URL}/posts/${scheduleId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${BLOTATO_API_KEY}`,
+                'blotato-api-key': BLOTATO_API_KEY,
                 'Content-Type': 'application/json',
             },
         });
