@@ -40,6 +40,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
     }
 
+    // Log the API URL being used (for debugging)
+    console.log(`Using Blotato API URL: ${BLOTATO_API_URL}`);
+
     try {
         const { caption, hashtags, media, platforms, scheduledAt } = req.body as ScheduleRequest;
 
