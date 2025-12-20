@@ -350,6 +350,7 @@ function mapDbToCalendarPost(row: Record<string, unknown>): CalendarPost {
         postedAt: row.posted_at as string | undefined,
         postUrl: row.post_url as string | undefined,
         postId: row.post_id as string | undefined,
+        blotatoScheduleId: row.blotato_schedule_id as string | undefined,
         errorMessage: row.error_message as string | undefined,
         retryCount: (row.retry_count as number) || 0
     };
@@ -372,15 +373,26 @@ export function groupPostsByDate(posts: CalendarPost[]): Map<string, CalendarPos
 
 /**
  * Get platform color for UI display
+ * Supports all 8 Blotato platforms
  */
 export function getPlatformColor(platform: SocialPlatform): string {
     switch (platform) {
         case 'twitter':
             return 'sky';
-        case 'linkedin':
+        case 'facebook':
             return 'blue';
         case 'instagram':
             return 'pink';
+        case 'linkedin':
+            return 'indigo';
+        case 'bluesky':
+            return 'cyan';
+        case 'threads':
+            return 'slate';
+        case 'tiktok':
+            return 'rose';
+        case 'youtube':
+            return 'red';
         default:
             return 'slate';
     }
@@ -388,15 +400,26 @@ export function getPlatformColor(platform: SocialPlatform): string {
 
 /**
  * Get platform display name
+ * Supports all 8 Blotato platforms
  */
 export function getPlatformName(platform: SocialPlatform): string {
     switch (platform) {
         case 'twitter':
             return 'Twitter/X';
-        case 'linkedin':
-            return 'LinkedIn';
+        case 'facebook':
+            return 'Facebook';
         case 'instagram':
             return 'Instagram';
+        case 'linkedin':
+            return 'LinkedIn';
+        case 'bluesky':
+            return 'BlueSky';
+        case 'threads':
+            return 'Threads';
+        case 'tiktok':
+            return 'TikTok';
+        case 'youtube':
+            return 'YouTube';
         default:
             return platform;
     }
@@ -477,6 +500,7 @@ export function extractHashtags(content: string): string[] {
 
 /**
  * Get calendar stats for a date range
+ * Supports all 8 Blotato platforms
  */
 export async function getCalendarStats(
     startDate: Date,
@@ -497,8 +521,13 @@ export async function getCalendarStats(
         failed: 0,
         byPlatform: {
             twitter: 0,
+            facebook: 0,
+            instagram: 0,
             linkedin: 0,
-            instagram: 0
+            bluesky: 0,
+            threads: 0,
+            tiktok: 0,
+            youtube: 0
         } as Record<SocialPlatform, number>
     };
 
@@ -511,7 +540,9 @@ export async function getCalendarStats(
             stats.failed++;
         }
 
-        stats.byPlatform[post.platform]++;
+        if (stats.byPlatform[post.platform] !== undefined) {
+            stats.byPlatform[post.platform]++;
+        }
     }
 
     return stats;

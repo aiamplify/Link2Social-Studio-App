@@ -1,14 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import https from 'https';
 
-// Instagram credentials
+/**
+ * DEPRECATED: Direct Instagram posting is deprecated.
+ * All posting should now go through Blotato API.
+ * This file is kept for backwards compatibility.
+ *
+ * Instagram credentials should be stored in environment variables:
+ * - INSTAGRAM_ACCESS_TOKEN
+ * - INSTAGRAM_ACCOUNT_ID
+ * - IMGBB_API_KEY
+ */
 const INSTAGRAM_CREDENTIALS = {
-    accessToken: 'EAAoLa0r1ya8BQO3vVOmT4wM8XEWYf22M4zFcOvMrDisUv63Ap3XDz4IeWdUwUBAMICJPs5ZADf7ZASJiq6hFV12sNtl3ADIHFqlA01ZCNnp457sPuvxKb0pZAdJYVl6CV2ZCaBkImkZCCPXdR82nFH0GdUbRezgBZB5bZBJDCf1RtqZAUzXItesR0RyNeru0L0zZBXhesZD',
-    instagramAccountId: '17841460156952672',
+    accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || '',
+    instagramAccountId: process.env.INSTAGRAM_ACCOUNT_ID || '',
 };
 
 // ImgBB API for hosting images (free tier)
-const IMGBB_API_KEY = '74b6c0a4993129181bf3413ee86029e2';
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY || '';
 
 /**
  * Make HTTPS request (consistent with other API routes)

@@ -5,29 +5,30 @@
 
 import React, { useState, useRef } from 'react';
 import { generateCarousel } from '../services/geminiService';
-import { CarouselResult, SocialPost } from '../types';
-import { postToTwitter, postToLinkedIn, postToInstagram, PostResult } from '../services/socialMediaService';
-import { 
-    Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, Layout, Copy, Check, 
+import { CarouselResult, SocialPost, ALL_PLATFORMS } from '../types';
+import { postNow, extractHashtags, BlotatoPlatform } from '../services/blotatoService';
+import {
+    Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, Layout, Copy, Check,
     ArrowLeft, ArrowRight, Image as ImageIcon, MessageSquare, Upload, X, ChevronDown, ChevronUp,
     Plus, Trash2, RefreshCw, Save, FolderOpen, Calendar, Clock, Send, Eye, EyeOff,
     Smartphone, Monitor, Tablet, Grid3X3, Layers, Wand2, Settings, Sliders, Target,
     TrendingUp, BarChart3, Users, Heart, Share2, Bookmark, Star, MoreHorizontal,
     Linkedin, Instagram, Facebook, Twitter, PanelLeft, Maximize, Minimize, Edit3,
     Shuffle, Lock, Unlock, Zap, FileText, Hash, Type, AlignLeft, AlignCenter, AlignRight,
-    Bold, Italic, Underline, List, ListOrdered, Quote, Code, Heading1, Heading2
+    Bold, Italic, Underline, List, ListOrdered, Quote, Code, Heading1, Heading2,
+    Youtube, Video, Radio
 } from 'lucide-react';
 import ImageViewer from './ImageViewer';
 import SchedulePostModal from './SchedulePostModal';
 import { SocialPlatform } from '../types';
 
-// Platform configurations with optimal carousel specs (Twitter, LinkedIn, Instagram only)
+// Platform configurations with optimal carousel specs - All 8 Blotato platforms
 const PLATFORM_CONFIGS = [
     {
         id: 'twitter',
         name: 'X / Twitter',
         icon: Twitter,
-        color: 'slate',
+        color: 'sky',
         aspectRatio: '16:9',
         maxSlides: 4,
         optimalSlides: '2-4',
@@ -37,17 +38,17 @@ const PLATFORM_CONFIGS = [
         tips: 'Concise, punchy text, trending topics'
     },
     {
-        id: 'linkedin',
-        name: 'LinkedIn',
-        icon: Linkedin,
+        id: 'facebook',
+        name: 'Facebook',
+        icon: Facebook,
         color: 'blue',
         aspectRatio: '1:1',
-        maxSlides: 20,
-        optimalSlides: '5-10',
+        maxSlides: 10,
+        optimalSlides: '5-8',
         dimensions: '1080x1080',
-        captionLimit: 3000,
-        hashtagLimit: 5,
-        tips: 'Use professional tone, include industry insights'
+        captionLimit: 63206,
+        hashtagLimit: 10,
+        tips: 'Engaging stories, community-focused'
     },
     {
         id: 'instagram',
@@ -61,6 +62,71 @@ const PLATFORM_CONFIGS = [
         captionLimit: 2200,
         hashtagLimit: 30,
         tips: 'Visual-first, use emojis, strong CTA on last slide'
+    },
+    {
+        id: 'linkedin',
+        name: 'LinkedIn',
+        icon: Linkedin,
+        color: 'indigo',
+        aspectRatio: '1:1',
+        maxSlides: 20,
+        optimalSlides: '5-10',
+        dimensions: '1080x1080',
+        captionLimit: 3000,
+        hashtagLimit: 5,
+        tips: 'Use professional tone, include industry insights'
+    },
+    {
+        id: 'bluesky',
+        name: 'BlueSky',
+        icon: Radio,
+        color: 'cyan',
+        aspectRatio: '16:9',
+        maxSlides: 4,
+        optimalSlides: '2-4',
+        dimensions: '1200x675',
+        captionLimit: 300,
+        hashtagLimit: 5,
+        tips: 'Authentic voice, community engagement'
+    },
+    {
+        id: 'threads',
+        name: 'Threads',
+        icon: MessageSquare,
+        color: 'slate',
+        aspectRatio: '1:1',
+        maxSlides: 10,
+        optimalSlides: '3-5',
+        dimensions: '1080x1080',
+        captionLimit: 500,
+        hashtagLimit: 10,
+        tips: 'Conversational tone, text-focused'
+    },
+    {
+        id: 'tiktok',
+        name: 'TikTok',
+        icon: Video,
+        color: 'rose',
+        aspectRatio: '9:16',
+        maxSlides: 10,
+        optimalSlides: '3-5',
+        dimensions: '1080x1920',
+        captionLimit: 2200,
+        hashtagLimit: 5,
+        tips: 'Trendy, engaging, vertical format preferred'
+    },
+    {
+        id: 'youtube',
+        name: 'YouTube',
+        icon: Youtube,
+        color: 'red',
+        aspectRatio: '16:9',
+        maxSlides: 10,
+        optimalSlides: '5-8',
+        dimensions: '1920x1080',
+        captionLimit: 5000,
+        hashtagLimit: 15,
+        tips: 'Thumbnail quality, detailed descriptions'
     },
 ];
 
@@ -231,7 +297,7 @@ const ArticleToCarousel: React.FC = () => {
         setTimeout(() => setCopiedPostIndex(null), 2000);
     };
 
-    // Post to individual platform
+    // Post to individual platform via Blotato
     const handlePostToPlatform = async (platform: string, caption: string) => {
         if (!result || result.slides.length === 0) return;
 
@@ -244,22 +310,16 @@ const ArticleToCarousel: React.FC = () => {
                 .filter(s => s.imageData)
                 .map(s => s.imageData!);
 
-            let postResult: PostResult;
+            // Normalize platform name for Blotato
+            const blotatoPlatform = platform.toLowerCase().replace('x / ', '').replace(' ', '') as BlotatoPlatform;
 
-            switch (platform.toLowerCase()) {
-                case 'x / twitter':
-                case 'twitter':
-                    postResult = await postToTwitter(caption, images);
-                    break;
-                case 'linkedin':
-                    postResult = await postToLinkedIn(caption, images);
-                    break;
-                case 'instagram':
-                    postResult = await postToInstagram(caption, images);
-                    break;
-                default:
-                    throw new Error(`Unsupported platform: ${platform}`);
-            }
+            // Post via Blotato API
+            const postResult = await postNow(
+                caption,
+                [blotatoPlatform],
+                images,
+                extractHashtags(caption)
+            );
 
             setPostResults(prev => [...prev, {
                 platform,
@@ -270,7 +330,7 @@ const ArticleToCarousel: React.FC = () => {
             setPostResults(prev => [...prev, {
                 platform,
                 success: false,
-                message: err.message || 'Failed to post'
+                message: err.message || 'Failed to post via Blotato'
             }]);
         } finally {
             setIsPosting(false);

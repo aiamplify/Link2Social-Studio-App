@@ -1,11 +1,20 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import https from 'https';
 
-// Hardcoded credentials (private repo, single user)
+/**
+ * DEPRECATED: Direct LinkedIn posting is deprecated.
+ * All posting should now go through Blotato API.
+ * This file is kept for backwards compatibility.
+ *
+ * LinkedIn credentials should be stored in environment variables:
+ * - LINKEDIN_CLIENT_ID
+ * - LINKEDIN_CLIENT_SECRET
+ * - LINKEDIN_ACCESS_TOKEN
+ */
 const LINKEDIN_CREDENTIALS = {
-  clientId: '78oabx8n7pnabq',
-  clientSecret: 'WPL_AP1.rWM81mMI5QUstFAu.YPQo6A==',
-  accessToken: 'AQXi2wONnyjNoGI9q1KXELClsVAfoyyP3MoZ8-RfuzHZJlENB-xjZ30cILjGsg1Ek7jEhE8Mi19qhFtm232ohN9G2yoZx2NvIyQjHfeDBM06S9bYp5fsJPjW6oltrUtF8qGTuqNrwVIUXycaLPX4PbFuVmhG9fxDUpdE_l9e5XtQ1tbwVihbfBtFET73vv9FbT34IXoYSWiEVWntJakufVEZwvGAm2tO3NQz8WKDR6-vBbwXFIGvxQhc6zc_006-Hl27sJPDL-T2A4Ce1FJ4LpGeLIdygipdkQc-oBAxmqAEX2O_0JuJKUwTLFNU6xNoUWU26R_7zxHbj2O3YqM7wbwhVxHaGg',
+  clientId: process.env.LINKEDIN_CLIENT_ID || '',
+  clientSecret: process.env.LINKEDIN_CLIENT_SECRET || '',
+  accessToken: process.env.LINKEDIN_ACCESS_TOKEN || '',
 };
 
 // Cache for person URN (LinkedIn user ID)

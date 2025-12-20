@@ -3,17 +3,19 @@
  *
  * A comprehensive calendar view for managing scheduled social media posts
  * with drag-and-drop, month/week/day views, and platform filtering.
+ * Supports all 8 Blotato platforms: Twitter, Facebook, Instagram, LinkedIn, BlueSky, Threads, TikTok, YouTube
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Filter, Grid3X3, List, LayoutGrid,
     Clock, Twitter, Linkedin, Instagram, Eye, Edit3, Trash2, Copy, RefreshCw, ExternalLink,
     AlertCircle, CheckCircle2, Loader2, MoreHorizontal, X, GripVertical, CalendarDays,
-    TrendingUp, BarChart3, Target, Zap, Image, Video, FileText, Share2, ChevronDown
+    TrendingUp, BarChart3, Target, Zap, Image, Video, FileText, Share2, ChevronDown,
+    Facebook, Youtube, MessageCircle, Radio
 } from 'lucide-react';
 import {
-    CalendarPost, SocialPlatform, CalendarPostStatus, CalendarDay, CalendarWeek
+    CalendarPost, SocialPlatform, CalendarPostStatus, CalendarDay, CalendarWeek, ALL_PLATFORMS
 } from '../types';
 import {
     fetchCalendarPostsForMonth,
@@ -29,6 +31,7 @@ import {
     getTimeUntilPost,
     groupPostsByDate
 } from '../services/calendarService';
+import { rescheduleBlotatoPost } from '../services/blotatoService';
 
 interface ContentCalendarProps {
     onRefresh?: () => void;
@@ -75,8 +78,43 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
         byPlatform: Record<SocialPlatform, number>;
     } | null>(null);
 
-    // Load posts for current view
-    const loadPosts = useCallback(async () => {
+    // Cache ref to avoid redundant fetches
+    const cacheRef = useRef<{
+        key: string;
+        posts: CalendarPost[];
+        stats: typeof stats;
+        timestamp: number;
+    } | null>(null);
+
+    // Debounce timer ref
+    const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Generate cache key for current view
+    const getCacheKey = useCallback(() => {
+        return `${currentDate.getFullYear()}-${currentDate.getMonth()}-${currentDate.getDate()}-${viewMode}`;
+    }, [currentDate, viewMode]);
+
+    // Load posts for current view with caching and debouncing
+    const loadPosts = useCallback(async (forceRefresh = false) => {
+        // Clear any pending debounce
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+        }
+
+        const cacheKey = getCacheKey();
+        const now = Date.now();
+        const CACHE_TTL = 30000; // 30 second cache
+
+        // Check cache first (unless force refresh)
+        if (!forceRefresh && cacheRef.current) {
+            if (cacheRef.current.key === cacheKey && now - cacheRef.current.timestamp < CACHE_TTL) {
+                setPosts(cacheRef.current.posts);
+                setStats(cacheRef.current.stats);
+                setLoading(false);
+                return;
+            }
+        }
+
         setLoading(true);
         setError(null);
 
@@ -113,35 +151,48 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
                 endDate.setHours(23, 59, 59, 999);
             }
 
-            const fetchedPosts = await fetchCalendarPostsInRange(startDate, endDate);
-            setPosts(fetchedPosts);
-
-            // Load stats for the month
+            // Fetch posts and stats in parallel for better performance
             const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
             const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
-            const monthStats = await getCalendarStats(monthStart, monthEnd);
+
+            const [fetchedPosts, monthStats] = await Promise.all([
+                fetchCalendarPostsInRange(startDate, endDate),
+                getCalendarStats(monthStart, monthEnd)
+            ]);
+
+            setPosts(fetchedPosts);
             setStats(monthStats);
+
+            // Update cache
+            cacheRef.current = {
+                key: cacheKey,
+                posts: fetchedPosts,
+                stats: monthStats,
+                timestamp: now
+            };
         } catch (err) {
             console.error('Error loading calendar posts:', err);
             setError(err instanceof Error ? err.message : 'Failed to load posts');
         } finally {
             setLoading(false);
         }
-    }, [currentDate, viewMode]);
+    }, [currentDate, viewMode, getCacheKey]);
 
     useEffect(() => {
         loadPosts();
     }, [loadPosts]);
 
-    // Filter posts
-    const filteredPosts = posts.filter(post => {
-        if (platformFilter !== 'all' && post.platform !== platformFilter) return false;
-        if (statusFilter !== 'all' && post.status !== statusFilter) return false;
-        return true;
-    });
+    // Memoize filtered posts for performance
+    const filteredPosts = useMemo(() => {
+        return posts.filter(post => {
+            if (platformFilter !== 'all' && post.platform !== platformFilter) return false;
+            if (statusFilter !== 'all' && post.status !== statusFilter) return false;
+            return true;
+        });
+    }, [posts, platformFilter, statusFilter]);
 
-    // Group posts by date
-    const postsByDate = groupPostsByDate(filteredPosts);
+    // Memoize grouped posts for performance
+    const postsByDate = useMemo(() => groupPostsByDate(filteredPosts), [filteredPosts]);
 
     // Generate calendar grid
     const generateCalendarDays = (): CalendarDay[][] => {
@@ -296,15 +347,27 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
         setDraggedPost(null);
     };
 
-    // Get platform icon
-    const getPlatformIcon = (platform: SocialPlatform) => {
+    // Get platform icon - supports all 8 Blotato platforms
+    const getPlatformIcon = (platform: SocialPlatform, size: string = "w-3 h-3") => {
         switch (platform) {
             case 'twitter':
-                return <Twitter className="w-3 h-3" />;
-            case 'linkedin':
-                return <Linkedin className="w-3 h-3" />;
+                return <Twitter className={size} />;
+            case 'facebook':
+                return <Facebook className={size} />;
             case 'instagram':
-                return <Instagram className="w-3 h-3" />;
+                return <Instagram className={size} />;
+            case 'linkedin':
+                return <Linkedin className={size} />;
+            case 'bluesky':
+                return <Radio className={size} />;
+            case 'threads':
+                return <MessageCircle className={size} />;
+            case 'tiktok':
+                return <Video className={size} />;
+            case 'youtube':
+                return <Youtube className={size} />;
+            default:
+                return <Share2 className={size} />;
         }
     };
 
@@ -621,8 +684,9 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
                     </button>
 
                     <button
-                        onClick={loadPosts}
+                        onClick={() => loadPosts(true)}
                         className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"
+                        title="Refresh calendar"
                     >
                         <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
@@ -674,9 +738,9 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
                             className="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-white text-sm"
                         >
                             <option value="all">All Platforms</option>
-                            <option value="twitter">Twitter/X</option>
-                            <option value="linkedin">LinkedIn</option>
-                            <option value="instagram">Instagram</option>
+                            {ALL_PLATFORMS.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
                         </select>
                     </div>
 

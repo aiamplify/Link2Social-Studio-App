@@ -167,11 +167,43 @@ export interface ScriptScene {
 
 // ==================== CONTENT CALENDAR TYPES ====================
 
-export type SocialPlatform = 'twitter' | 'linkedin' | 'instagram';
+// All platforms supported via Blotato API
+export type SocialPlatform =
+    | 'twitter'
+    | 'facebook'
+    | 'instagram'
+    | 'linkedin'
+    | 'bluesky'
+    | 'threads'
+    | 'tiktok'
+    | 'youtube';
 
 export type CalendarPostStatus = 'scheduled' | 'posting' | 'posted' | 'failed';
 
 export type CalendarPostType = 'image' | 'carousel' | 'video' | 'text';
+
+// Platform configuration for UI display
+export interface PlatformInfo {
+    id: SocialPlatform;
+    name: string;
+    color: string;
+    maxCharacters?: number;
+    maxImages?: number;
+    supportsVideo?: boolean;
+    supportsCarousel?: boolean;
+}
+
+// All available platforms
+export const ALL_PLATFORMS: PlatformInfo[] = [
+    { id: 'twitter', name: 'Twitter/X', color: 'sky', maxCharacters: 280, maxImages: 4, supportsVideo: true, supportsCarousel: false },
+    { id: 'facebook', name: 'Facebook', color: 'blue', maxCharacters: 63206, maxImages: 10, supportsVideo: true, supportsCarousel: true },
+    { id: 'instagram', name: 'Instagram', color: 'pink', maxCharacters: 2200, maxImages: 10, supportsVideo: true, supportsCarousel: true },
+    { id: 'linkedin', name: 'LinkedIn', color: 'indigo', maxCharacters: 3000, maxImages: 9, supportsVideo: true, supportsCarousel: true },
+    { id: 'bluesky', name: 'BlueSky', color: 'cyan', maxCharacters: 300, maxImages: 4, supportsVideo: false, supportsCarousel: false },
+    { id: 'threads', name: 'Threads', color: 'slate', maxCharacters: 500, maxImages: 10, supportsVideo: true, supportsCarousel: true },
+    { id: 'tiktok', name: 'TikTok', color: 'rose', maxCharacters: 2200, maxImages: 0, supportsVideo: true, supportsCarousel: false },
+    { id: 'youtube', name: 'YouTube', color: 'red', maxCharacters: 5000, maxImages: 0, supportsVideo: true, supportsCarousel: false }
+];
 
 export interface CalendarPost {
     id: string;
@@ -190,6 +222,7 @@ export interface CalendarPost {
     postedAt?: string;                  // When it was actually posted
     postUrl?: string;                   // URL of the published post
     postId?: string;                    // Platform post ID
+    blotatoScheduleId?: string;         // Blotato schedule ID for tracking
     errorMessage?: string;              // Error message if posting failed
     retryCount: number;                 // Number of retry attempts
 }
