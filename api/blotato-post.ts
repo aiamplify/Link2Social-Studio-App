@@ -7,9 +7,21 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Blotato API configuration
-const BLOTATO_API_URL = process.env.BLOTATO_API_URL || 'https://api.blotato.com/v1';
+// Blotato API configuration - correct URL is backend.blotato.com/v2
+const BLOTATO_API_URL = process.env.BLOTATO_API_URL || 'https://backend.blotato.com/v2';
 const BLOTATO_API_KEY = process.env.BLOTATO_API_KEY || '';
+
+// Platform account IDs from Blotato - get these from https://my.blotato.com/settings
+const PLATFORM_ACCOUNT_IDS: Record<string, string | undefined> = {
+    twitter: process.env.BLOTATO_TWITTER_ACCOUNT_ID,
+    facebook: process.env.BLOTATO_FACEBOOK_ACCOUNT_ID,
+    instagram: process.env.BLOTATO_INSTAGRAM_ACCOUNT_ID,
+    linkedin: process.env.BLOTATO_LINKEDIN_ACCOUNT_ID,
+    bluesky: process.env.BLOTATO_BLUESKY_ACCOUNT_ID,
+    threads: process.env.BLOTATO_THREADS_ACCOUNT_ID,
+    tiktok: process.env.BLOTATO_TIKTOK_ACCOUNT_ID,
+    youtube: process.env.BLOTATO_YOUTUBE_ACCOUNT_ID,
+};
 
 interface BlotatoMedia {
     type: 'image' | 'video';
@@ -69,11 +81,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         console.log(`Posting to Blotato for platforms: ${platforms.join(', ')}`);
 
-        // Make request to Blotato API
+        // Make request to Blotato API v2
         const response = await fetch(`${BLOTATO_API_URL}/posts`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${BLOTATO_API_KEY}`,
+                'blotato-api-key': BLOTATO_API_KEY,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(blotatoRequest)
