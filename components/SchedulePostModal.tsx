@@ -2,16 +2,19 @@
  * Schedule Post Modal - Reusable scheduling component
  *
  * This modal can be used from any tool to schedule a post to the content calendar.
- * It handles platform selection, date/time picking, and scheduling to the database.
+ * It handles platform selection, date/time picking, and scheduling via Blotato API.
+ * Supports all 8 platforms: Twitter, Facebook, Instagram, LinkedIn, BlueSky, Threads, TikTok, YouTube
  */
 
 import React, { useState, useEffect } from 'react';
 import {
     X, Calendar, Clock, Twitter, Linkedin, Instagram, Check, AlertCircle,
-    Image, ChevronDown, Loader2, CalendarDays, Sparkles, Zap
+    Image, ChevronDown, Loader2, CalendarDays, Sparkles, Zap, Facebook, Youtube,
+    Video, MessageCircle, Radio, Share2
 } from 'lucide-react';
-import { SocialPlatform, CalendarPostType, SchedulePostData } from '../types';
+import { SocialPlatform, CalendarPostType, SchedulePostData, ALL_PLATFORMS } from '../types';
 import { schedulePost, scheduleMultiplePosts } from '../services/calendarService';
+import { scheduleWithBlotato, extractHashtags } from '../services/blotatoService';
 
 interface SchedulePostModalProps {
     isOpen: boolean;
@@ -51,11 +54,28 @@ const OPTIMAL_TIME_SLOTS: TimeSlot[] = [
     { label: 'Night', time: '21:00', description: 'Social media prime time' },
 ];
 
-const PLATFORMS: { id: SocialPlatform; name: string; icon: React.ElementType; color: string }[] = [
-    { id: 'twitter', name: 'Twitter/X', icon: Twitter, color: 'sky' },
-    { id: 'linkedin', name: 'LinkedIn', icon: Linkedin, color: 'blue' },
-    { id: 'instagram', name: 'Instagram', icon: Instagram, color: 'pink' },
-];
+// Platform icon mapping - using available lucide icons
+const getPlatformIcon = (platformId: SocialPlatform): React.ElementType => {
+    switch (platformId) {
+        case 'twitter': return Twitter;
+        case 'facebook': return Facebook;
+        case 'instagram': return Instagram;
+        case 'linkedin': return Linkedin;
+        case 'bluesky': return Radio;  // Cloud-like icon for BlueSky
+        case 'threads': return MessageCircle;
+        case 'tiktok': return Video;
+        case 'youtube': return Youtube;
+        default: return Share2;
+    }
+};
+
+// All 8 platforms supported via Blotato
+const PLATFORMS: { id: SocialPlatform; name: string; icon: React.ElementType; color: string }[] = ALL_PLATFORMS.map(p => ({
+    id: p.id,
+    name: p.name,
+    icon: getPlatformIcon(p.id),
+    color: p.color
+}));
 
 const SchedulePostModal: React.FC<SchedulePostModalProps> = ({
     isOpen,
@@ -133,7 +153,7 @@ const SchedulePostModal: React.FC<SchedulePostModalProps> = ({
         setUseOptimalTime(true);
     };
 
-    // Handle scheduling
+    // Handle scheduling - routes through Blotato API
     const handleSchedule = async () => {
         if (selectedPlatforms.length === 0) {
             setError('Please select at least one platform');
@@ -156,33 +176,47 @@ const SchedulePostModal: React.FC<SchedulePostModalProps> = ({
         setError(null);
 
         try {
-            if (selectedPlatforms.length === 1) {
-                // Single platform
-                await schedulePost({
-                    title,
-                    content: getContentForPlatform(selectedPlatforms[0]),
-                    platform: selectedPlatforms[0],
-                    scheduledAt,
-                    postType: postType || 'image',
-                    images,
-                    hashtags,
-                    sourceType,
-                    sourceId,
-                });
-            } else {
-                // Multiple platforms
-                const postsData: SchedulePostData[] = selectedPlatforms.map(platform => ({
-                    title,
-                    content: getContentForPlatform(platform),
-                    platform,
-                    scheduledAt,
-                    postType: postType || 'image',
-                    images,
-                    hashtags,
-                    sourceType,
-                    sourceId,
-                }));
+            // Get the primary content (use first platform's content or string content)
+            const primaryContent = typeof content === 'string'
+                ? content
+                : content[0]?.content || '';
 
+            // Extract hashtags from content if not provided
+            const allHashtags = hashtags.length > 0 ? hashtags : extractHashtags(primaryContent);
+
+            // Schedule via Blotato API - Blotato handles the actual posting at scheduled time
+            const blotatoResult = await scheduleWithBlotato({
+                caption: primaryContent,
+                hashtags: allHashtags,
+                media: images.map(img => ({
+                    type: 'image' as const,
+                    data: img.replace(/^data:image\/\w+;base64,/, ''),
+                })),
+                platforms: selectedPlatforms,
+                scheduledAt,
+            });
+
+            if (!blotatoResult.success) {
+                throw new Error(blotatoResult.message);
+            }
+
+            // Also save to local calendar for display purposes
+            // Each platform gets its own entry in the calendar
+            const postsData: SchedulePostData[] = selectedPlatforms.map(platform => ({
+                title,
+                content: getContentForPlatform(platform),
+                platform,
+                scheduledAt,
+                postType: postType || 'image',
+                images,
+                hashtags: allHashtags,
+                sourceType,
+                sourceId,
+            }));
+
+            if (postsData.length === 1) {
+                await schedulePost(postsData[0]);
+            } else {
                 await scheduleMultiplePosts(postsData);
             }
 
@@ -266,9 +300,9 @@ const SchedulePostModal: React.FC<SchedulePostModalProps> = ({
                             {/* Platform Selection */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-300 mb-3">
-                                    Select Platform{allowMultiplePlatforms ? 's' : ''}
+                                    Select Platform{allowMultiplePlatforms ? 's' : ''} (via Blotato)
                                 </label>
-                                <div className="grid grid-cols-3 gap-3">
+                                <div className="grid grid-cols-4 gap-2">
                                     {PLATFORMS.map(platform => {
                                         const Icon = platform.icon;
                                         const isSelected = selectedPlatforms.includes(platform.id);
@@ -278,22 +312,27 @@ const SchedulePostModal: React.FC<SchedulePostModalProps> = ({
                                                 key={platform.id}
                                                 onClick={() => togglePlatform(platform.id)}
                                                 className={`
-                                                    p-4 rounded-xl border transition-all
+                                                    p-3 rounded-xl border transition-all
                                                     ${isSelected
                                                         ? `bg-${platform.color}-500/20 border-${platform.color}-500/50 text-${platform.color}-300`
                                                         : 'bg-slate-800/50 border-white/5 text-slate-400 hover:border-white/20'
                                                     }
                                                 `}
                                             >
-                                                <Icon className="w-6 h-6 mx-auto mb-2" />
-                                                <span className="text-sm">{platform.name}</span>
+                                                <Icon className="w-5 h-5 mx-auto mb-1" />
+                                                <span className="text-xs block truncate">{platform.name}</span>
                                                 {isSelected && (
-                                                    <Check className="w-4 h-4 mx-auto mt-2 text-emerald-400" />
+                                                    <Check className="w-3 h-3 mx-auto mt-1 text-emerald-400" />
                                                 )}
                                             </button>
                                         );
                                     })}
                                 </div>
+                                {selectedPlatforms.length > 0 && (
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        {selectedPlatforms.length} platform{selectedPlatforms.length > 1 ? 's' : ''} selected - posting via Blotato
+                                    </p>
+                                )}
                             </div>
 
                             {/* Date Selection */}

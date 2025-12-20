@@ -7,9 +7,9 @@ import React, { useState, useRef } from 'react';
 import JSZip from 'jszip';
 import { generateArticleInfographic } from '../services/geminiService';
 import { saveContentBundleDraft } from '../services/postsService';
-import { postToTwitter, postToLinkedIn, postToInstagram, PostResult } from '../services/socialMediaService';
+import { postNow, extractHashtags, BlotatoPlatform } from '../services/blotatoService';
 import { exportToGoogleSheets, GoogleSheetsExportResult } from '../services/googleSheetsService';
-import { Citation, ArticleHistoryItem, SocialPost, ContentBundleResult } from '../types';
+import { Citation, ArticleHistoryItem, SocialPost, ContentBundleResult, ALL_PLATFORMS } from '../types';
 import {
     Link, Loader2, Download, Sparkles, AlertCircle, Palette, Globe, ExternalLink, BookOpen, Clock,
     Maximize, Copy, Check, Linkedin, Twitter, Instagram, Share2, MessageSquare,
@@ -18,7 +18,7 @@ import {
     Image as ImageIcon, FileText, Hash, TrendingUp, Target, Users, Calendar, Send, Archive,
     Bookmark, Star, Heart, MoreHorizontal, Filter, SortAsc, Search, X, Upload, Paintbrush,
     Ratio, Monitor, Smartphone, Tablet, PanelLeft, BarChart3, PieChart, Activity, FileArchive,
-    Sheet
+    Sheet, Facebook, Youtube, Video, MessageCircle, Radio
 } from 'lucide-react';
 import { LoadingState } from './LoadingState';
 import ImageViewer from './ImageViewer';
@@ -42,11 +42,31 @@ const STYLE_PRESETS = [
     { id: 'custom', name: "Custom Style", description: "Define your own style", colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef'] },
 ];
 
-// Platform configurations - Twitter, LinkedIn, Instagram only
+// Platform icon mapping for UI
+const getPlatformIcon = (platformId: string) => {
+    switch (platformId.toLowerCase()) {
+        case 'twitter': return Twitter;
+        case 'facebook': return Facebook;
+        case 'instagram': return Instagram;
+        case 'linkedin': return Linkedin;
+        case 'bluesky': return Radio;
+        case 'threads': return MessageCircle;
+        case 'tiktok': return Video;
+        case 'youtube': return Youtube;
+        default: return Share2;
+    }
+};
+
+// Platform configurations - All 8 Blotato platforms
 const PLATFORMS = [
-    { id: 'Twitter', label: 'X / Twitter', icon: Twitter, charLimit: 280, hashtagLimit: 3, bestTime: '12pm-3pm' },
-    { id: 'LinkedIn', label: 'LinkedIn', icon: Linkedin, charLimit: 3000, hashtagLimit: 5, bestTime: '9am-12pm' },
-    { id: 'Instagram', label: 'Instagram', icon: Instagram, charLimit: 2200, hashtagLimit: 30, bestTime: '11am-1pm' },
+    { id: 'twitter', label: 'X / Twitter', icon: Twitter, charLimit: 280, hashtagLimit: 3, bestTime: '12pm-3pm' },
+    { id: 'facebook', label: 'Facebook', icon: Facebook, charLimit: 63206, hashtagLimit: 10, bestTime: '1pm-4pm' },
+    { id: 'instagram', label: 'Instagram', icon: Instagram, charLimit: 2200, hashtagLimit: 30, bestTime: '11am-1pm' },
+    { id: 'linkedin', label: 'LinkedIn', icon: Linkedin, charLimit: 3000, hashtagLimit: 5, bestTime: '9am-12pm' },
+    { id: 'bluesky', label: 'BlueSky', icon: Radio, charLimit: 300, hashtagLimit: 5, bestTime: '10am-2pm' },
+    { id: 'threads', label: 'Threads', icon: MessageCircle, charLimit: 500, hashtagLimit: 10, bestTime: '12pm-3pm' },
+    { id: 'tiktok', label: 'TikTok', icon: Video, charLimit: 2200, hashtagLimit: 5, bestTime: '7pm-9pm' },
+    { id: 'youtube', label: 'YouTube', icon: Youtube, charLimit: 5000, hashtagLimit: 15, bestTime: '2pm-4pm' },
 ];
 
 const LANGUAGES = [
@@ -95,7 +115,7 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
     const [selectedPreset, setSelectedPreset] = useState(STYLE_PRESETS[0]);
     const [customStyle, setCustomStyle] = useState('');
     const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0].value);
-    const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['Twitter', 'LinkedIn', 'Instagram']);
+    const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['twitter', 'facebook', 'instagram', 'linkedin']);
     const [outputFormat, setOutputFormat] = useState(OUTPUT_FORMATS[2]); // Default landscape
     const [selectedTone, setSelectedTone] = useState(TONE_OPTIONS[0]);
     
@@ -394,7 +414,7 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
         }
     };
 
-    // Post to individual platform
+    // Post to individual platform via Blotato
     const handlePostToPlatform = async (platform: string, content: string) => {
         if (!imageData) return;
 
@@ -405,22 +425,16 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
             // Pass the infographic image
             const images = [imageData];
 
-            let postResult: PostResult;
+            // Normalize platform name for Blotato
+            let blotatoPlatform = platform.toLowerCase().replace('x / ', '').replace(' ', '') as BlotatoPlatform;
 
-            switch (platform.toLowerCase()) {
-                case 'x / twitter':
-                case 'twitter':
-                    postResult = await postToTwitter(content, images);
-                    break;
-                case 'linkedin':
-                    postResult = await postToLinkedIn(content, images);
-                    break;
-                case 'instagram':
-                    postResult = await postToInstagram(content, images);
-                    break;
-                default:
-                    throw new Error(`Unsupported platform: ${platform}`);
-            }
+            // Post via Blotato API
+            const postResult = await postNow(
+                content,
+                [blotatoPlatform],
+                images,
+                extractHashtags(content)
+            );
 
             setPostResults(prev => [...prev, {
                 platform,
@@ -431,7 +445,7 @@ const ArticleToInfographic: React.FC<ArticleToInfographicProps> = ({ history, on
             setPostResults(prev => [...prev, {
                 platform,
                 success: false,
-                message: err.message || 'Failed to post'
+                message: err.message || 'Failed to post via Blotato'
             }]);
         } finally {
             setIsPosting(false);
