@@ -23,7 +23,7 @@ import {
     deleteCalendarPost,
     reschedulePost,
     retryFailedPost,
-    getCalendarStats,
+    computeStatsFromPosts,
     getPlatformColor,
     getPlatformName,
     getStatusColor,
@@ -151,14 +151,9 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
                 endDate.setHours(23, 59, 59, 999);
             }
 
-            // Fetch posts and stats in parallel for better performance
-            const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-            const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
-
-            const [fetchedPosts, monthStats] = await Promise.all([
-                fetchCalendarPostsInRange(startDate, endDate),
-                getCalendarStats(monthStart, monthEnd)
-            ]);
+            // Fetch posts once, then compute stats from the fetched data (avoids double network request)
+            const fetchedPosts = await fetchCalendarPostsInRange(startDate, endDate);
+            const monthStats = computeStatsFromPosts(fetchedPosts);
 
             setPosts(fetchedPosts);
             setStats(monthStats);
@@ -194,14 +189,13 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
     // Memoize grouped posts for performance
     const postsByDate = useMemo(() => groupPostsByDate(filteredPosts), [filteredPosts]);
 
-    // Generate calendar grid
-    const generateCalendarDays = (): CalendarDay[][] => {
+    // Generate calendar grid - memoized to avoid recalculation on every render
+    const calendarDays = useMemo(() => {
         const weeks: CalendarDay[][] = [];
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
 
         const firstDayOfMonth = new Date(year, month, 1);
-        const lastDayOfMonth = new Date(year, month + 1, 0);
 
         // Start from the Sunday before the first day of the month
         const startDate = new Date(firstDayOfMonth);
@@ -234,7 +228,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
         }
 
         return weeks;
-    };
+    }, [currentDate, postsByDate]);
 
     // Navigation
     const navigatePrevious = () => {
@@ -869,7 +863,7 @@ const ContentCalendar: React.FC<ContentCalendarProps> = ({ onRefresh }) => {
 
                     {/* Calendar grid */}
                     <div className="grid grid-cols-7">
-                        {generateCalendarDays().flat().map(day => renderCalendarCell(day))}
+                        {calendarDays.flat().map(day => renderCalendarCell(day))}
                     </div>
                 </div>
             ) : viewMode === 'week' ? (

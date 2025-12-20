@@ -3,7 +3,7 @@
  * Displays all scheduled posts with countdown timers and management options
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Calendar, Clock, Send, Edit3, Trash2, RefreshCw, AlertCircle, Loader2,
     Eye, MoreHorizontal, X, Check, CalendarDays, FileText, ArrowLeft,
@@ -143,9 +143,12 @@ const ScheduledPosts: React.FC<ScheduledPostsProps> = ({ onEditPost, onRefresh }
         return diff > 0 && diff < 3600000; // Within 1 hour
     };
 
-    // Sort by scheduled date
-    const sortedPosts = [...posts].sort(
-        (a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+    // Sort by scheduled date - memoized for performance
+    const sortedPosts = useMemo(() =>
+        [...posts].sort(
+            (a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+        ),
+        [posts]
     );
 
     return (

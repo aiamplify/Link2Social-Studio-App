@@ -499,21 +499,16 @@ export function extractHashtags(content: string): string[] {
 }
 
 /**
- * Get calendar stats for a date range
- * Supports all 8 Blotato platforms
+ * Compute stats from an existing posts array (no network request)
+ * Use this when you already have the posts loaded to avoid double-fetching
  */
-export async function getCalendarStats(
-    startDate: Date,
-    endDate: Date
-): Promise<{
+export function computeStatsFromPosts(posts: CalendarPost[]): {
     total: number;
     scheduled: number;
     posted: number;
     failed: number;
     byPlatform: Record<SocialPlatform, number>;
-}> {
-    const posts = await fetchCalendarPostsInRange(startDate, endDate);
-
+} {
     const stats = {
         total: posts.length,
         scheduled: 0,
@@ -546,4 +541,23 @@ export async function getCalendarStats(
     }
 
     return stats;
+}
+
+/**
+ * Get calendar stats for a date range
+ * Supports all 8 Blotato platforms
+ * Note: If you already have posts loaded, use computeStatsFromPosts() instead
+ */
+export async function getCalendarStats(
+    startDate: Date,
+    endDate: Date
+): Promise<{
+    total: number;
+    scheduled: number;
+    posted: number;
+    failed: number;
+    byPlatform: Record<SocialPlatform, number>;
+}> {
+    const posts = await fetchCalendarPostsInRange(startDate, endDate);
+    return computeStatsFromPosts(posts);
 }
