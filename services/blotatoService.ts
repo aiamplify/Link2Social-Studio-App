@@ -323,7 +323,17 @@ export async function scheduleWithBlotato(postData: BlotatoPostData): Promise<Bl
         };
     } catch (error: unknown) {
         console.error('Blotato scheduling error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+        let errorMessage = 'Unknown error';
+        if (error instanceof Error) {
+            // Check for network-level fetch failures
+            if (error.message === 'fetch failed' || error.message === 'Failed to fetch') {
+                errorMessage = 'Network error - unable to reach the scheduling service. Please check your internet connection.';
+            } else {
+                errorMessage = error.message;
+            }
+        }
+
         return {
             success: false,
             message: `Blotato scheduling error: ${errorMessage}`,

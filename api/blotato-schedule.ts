@@ -40,6 +40,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
     }
 
+    // Log the API URL being used (for debugging)
+    console.log(`Using Blotato API URL: ${BLOTATO_API_URL}`);
+
     try {
         const { caption, hashtags, media, platforms, scheduledAt } = req.body as ScheduleRequest;
 
@@ -111,10 +114,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     } catch (error: unknown) {
         console.error('Blotato schedule error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        return res.status(500).json({
+
+        // Provide more specific error messages based on error type
+        let errorMessage = 'Unknown error occurred';
+        let statusCode = 500;
+
+        if (error instanceof Error) {
+            errorMessage = error.message;
+
+            // Check for common network errors
+            if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
+                errorMessage = 'Unable to connect to Blotato API. The service may be temporarily unavailable.';
+                statusCode = 503;
+            } else if (error.message.includes('ETIMEDOUT') || error.message.includes('timeout')) {
+                errorMessage = 'Connection to Blotato API timed out. Please try again.';
+                statusCode = 504;
+            } else if (error.message.includes('ENOTFOUND')) {
+                errorMessage = 'Blotato API host not found. Please check the API URL configuration.';
+                statusCode = 503;
+            } else if (error.message.includes('certificate') || error.message.includes('SSL')) {
+                errorMessage = 'SSL/TLS error connecting to Blotato API.';
+                statusCode = 502;
+            }
+        }
+
+        return res.status(statusCode).json({
             success: false,
-            message: `Blotato scheduling failed: ${errorMessage}`
+            message: `Blotato scheduling failed: ${errorMessage}`,
+            hint: 'If this persists, please verify your BLOTATO_API_KEY environment variable is set correctly.'
         });
     }
 }
