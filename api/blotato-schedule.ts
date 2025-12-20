@@ -45,6 +45,46 @@ interface ScheduleRequest {
     accountId?: string; // Optional: override account ID
 }
 
+/**
+ * Upload media to Blotato and get back a hosted URL
+ * Docs: https://help.blotato.com/api/api-reference/upload-media-v2-media
+ */
+async function uploadMediaToBlotato(mediaData: string): Promise<string | null> {
+    try {
+        // If it's already a URL, we can pass it directly
+        const isUrl = mediaData.startsWith('http://') || mediaData.startsWith('https://');
+
+        // For base64 data, we need to convert to a data URL format
+        let mediaUrl = mediaData;
+        if (!isUrl && !mediaData.startsWith('data:')) {
+            // Assume it's base64 image data, prepend data URL prefix
+            mediaUrl = `data:image/jpeg;base64,${mediaData}`;
+        }
+
+        const response = await fetch(`${BLOTATO_API_URL}/media`, {
+            method: 'POST',
+            headers: {
+                'blotato-api-key': BLOTATO_API_KEY,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: mediaUrl })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Media upload failed:', errorData);
+            return null;
+        }
+
+        const data = await response.json();
+        console.log('Media uploaded successfully:', data.url || data.mediaUrl);
+        return data.url || data.mediaUrl;
+    } catch (error) {
+        console.error('Error uploading media:', error);
+        return null;
+    }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Only allow POST requests
     if (req.method !== 'POST') {
@@ -83,6 +123,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
+        // Upload media first if provided
+        const mediaUrls: string[] = [];
+        if (media && media.length > 0) {
+            console.log(`Uploading ${media.length} media files to Blotato...`);
+            for (const m of media) {
+                const uploadedUrl = await uploadMediaToBlotato(m.data);
+                if (uploadedUrl) {
+                    mediaUrls.push(uploadedUrl);
+                } else {
+                    console.warn('Failed to upload a media file, skipping...');
+                }
+            }
+            console.log(`Successfully uploaded ${mediaUrls.length}/${media.length} media files`);
+        }
+
         // Schedule to each platform separately (Blotato requires one post per account)
         const results = [];
         const errors = [];
@@ -117,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         text: hashtags?.length > 0
                             ? `${caption}\n\n${hashtags.map(h => `#${h}`).join(' ')}`
                             : caption,
-                        mediaUrls: [], // Media URLs if already uploaded
+                        mediaUrls: mediaUrls, // Uploaded media URLs
                         platform: platform
                     },
                     target: target
