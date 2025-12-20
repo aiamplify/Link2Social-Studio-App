@@ -26,6 +26,10 @@ const PLATFORM_ACCOUNT_IDS: Record<string, string | undefined> = {
     youtube: process.env.BLOTATO_YOUTUBE_ACCOUNT_ID,
 };
 
+// Facebook and LinkedIn Page IDs (required for posting to Pages instead of profiles)
+const FACEBOOK_PAGE_ID = process.env.BLOTATO_FACEBOOK_PAGE_ID;
+const LINKEDIN_PAGE_ID = process.env.BLOTATO_LINKEDIN_PAGE_ID;
+
 interface BlotatoMedia {
     type: 'image' | 'video';
     data: string;
@@ -97,6 +101,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             // Build the Blotato API request per their v2 API spec
             // Docs: https://help.blotato.com/api/api-reference/publish-post
+
+            // Build target object - Facebook and LinkedIn Pages need pageId
+            const target: Record<string, string> = { targetType: platform };
+            if (platform === 'facebook' && FACEBOOK_PAGE_ID) {
+                target.pageId = FACEBOOK_PAGE_ID;
+            } else if (platform === 'linkedin' && LINKEDIN_PAGE_ID) {
+                target.pageId = LINKEDIN_PAGE_ID;
+            }
+
             const blotatoRequest = {
                 post: {
                     accountId: platformAccountId,
@@ -107,9 +120,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         mediaUrls: [], // Media URLs if already uploaded
                         platform: platform
                     },
-                    target: {
-                        targetType: platform
-                    }
+                    target: target
                 },
                 scheduledTime: scheduledAt // ISO 8601 format
             };
