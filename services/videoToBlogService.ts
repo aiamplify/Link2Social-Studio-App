@@ -182,7 +182,7 @@ NOTE: You may receive many images. Some may be redundant or transitional.
 
   return withRetry(async () => {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-3-pro-image-preview',
       contents: {
         parts: [...imageParts, promptText]
       },
