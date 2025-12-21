@@ -1,0 +1,5 @@
+{
+  "name": "Vid2Blog",
+  "description": "Transform video tutorials into high-quality, illustrated blog posts instantly using Gemini 2.5.",
+  "requestFramePermissions": []
+}
