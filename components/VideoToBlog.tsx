@@ -196,6 +196,13 @@ const VideoToBlog: React.FC = () => {
         });
     };
 
+    // URL transform to allow data URLs (base64 images)
+    const urlTransform = (url: string) => {
+        if (url.startsWith('data:')) return url;
+        if (url.startsWith('http')) return url;
+        return url;
+    };
+
     // Estimate reading time
     const getReadingTime = () => {
         if (!state.markdownContent) return 0;
@@ -563,6 +570,7 @@ const VideoToBlog: React.FC = () => {
                     <div className="rounded-2xl bg-slate-900/50 border border-white/5 overflow-hidden">
                         <div className="p-8 prose prose-invert prose-lg max-w-none">
                             <ReactMarkdown
+                                urlTransform={urlTransform}
                                 components={{
                                     h1: ({node, ...props}) => (
                                         <h1 {...props} className="text-3xl font-bold text-white mb-4" />
