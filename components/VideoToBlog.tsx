@@ -5,12 +5,15 @@
 
 import React, { useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import JSZip from 'jszip';
 import {
     VideoFrame,
     VideoBlogConfiguration,
     VideoBlogState,
     VideoBlogLength,
-    VideoBlogTone
+    VideoBlogTone,
+    BlogPostResult,
+    BlogVisual
 } from '../types';
 import {
     extractFramesFromVideo,
@@ -37,7 +40,13 @@ import {
     Zap,
     BookOpen,
     Palette,
-    Eye
+    Eye,
+    Calendar,
+    Save,
+    Send,
+    Image as ImageIcon,
+    Package,
+    X
 } from 'lucide-react';
 
 // Configuration options
@@ -54,7 +63,13 @@ const TONE_OPTIONS: { id: VideoBlogTone; label: string; description: string }[] 
     { id: 'enthusiastic', label: 'Enthusiastic', description: 'Energetic and engaging' },
 ];
 
-const VideoToBlog: React.FC = () => {
+interface VideoToBlogProps {
+    onPublish?: (post: BlogPostResult) => void;
+    onSaveDraft?: (post: BlogPostResult) => Promise<void>;
+    onSchedule?: (post: BlogPostResult, scheduledDate: Date) => Promise<void>;
+}
+
+const VideoToBlog: React.FC<VideoToBlogProps> = ({ onPublish, onSaveDraft, onSchedule }) => {
     // State
     const [state, setState] = useState<VideoBlogState>({
         status: 'idle',
@@ -74,6 +89,16 @@ const VideoToBlog: React.FC = () => {
     const [dragActive, setDragActive] = useState(false);
     const [showConfig, setShowConfig] = useState(true);
     const [copiedContent, setCopiedContent] = useState(false);
+    const [showFramesModal, setShowFramesModal] = useState(false);
+
+    // Publishing state
+    const [isPublished, setIsPublished] = useState(false);
+    const [isSavingDraft, setIsSavingDraft] = useState(false);
+    const [draftSaved, setDraftSaved] = useState(false);
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [scheduleDate, setScheduleDate] = useState('');
+    const [scheduleTime, setScheduleTime] = useState('');
+    const [isScheduling, setIsScheduling] = useState(false);
 
     // Refs
     const inputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +171,10 @@ const VideoToBlog: React.FC = () => {
             progress: 0,
             frames: []
         });
+        setIsPublished(false);
+        setDraftSaved(false);
+        setScheduleDate('');
+        setScheduleTime('');
     };
 
     // Drag and drop handlers
@@ -181,6 +210,113 @@ const VideoToBlog: React.FC = () => {
             await navigator.clipboard.writeText(state.markdownContent);
             setCopiedContent(true);
             setTimeout(() => setCopiedContent(false), 2000);
+        }
+    };
+
+    // Download single screenshot
+    const downloadSingleScreenshot = (frame: VideoFrame, index: number) => {
+        const link = document.createElement('a');
+        link.href = frame.dataUrl;
+        link.download = `screenshot-${index + 1}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    // Download all screenshots as ZIP
+    const downloadAllScreenshots = async () => {
+        const zip = new JSZip();
+        const folder = zip.folder('screenshots');
+
+        if (!folder) return;
+
+        state.frames.forEach((frame, index) => {
+            // Extract base64 data from data URL
+            const base64Data = frame.dataUrl.split(',')[1];
+            folder.file(`screenshot-${String(index + 1).padStart(2, '0')}.jpg`, base64Data, { base64: true });
+        });
+
+        const content = await zip.generateAsync({ type: 'blob' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = `${state.videoName?.replace(/\.[^/.]+$/, '') || 'video'}-screenshots.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    };
+
+    // Convert to BlogPostResult format for publishing
+    const createBlogPostResult = (): BlogPostResult => {
+        // Extract title from markdown content
+        const titleMatch = state.markdownContent?.match(/^#\s+(.+)$/m);
+        const title = titleMatch ? titleMatch[1] : 'Untitled Blog Post';
+
+        // Extract subtitle/first paragraph
+        const subtitleMatch = state.markdownContent?.match(/^(?!#)(.+)$/m);
+        const subtitle = subtitleMatch ? subtitleMatch[1].substring(0, 150) : '';
+
+        // Create visuals from frames
+        const visuals: BlogVisual[] = state.frames.map((frame, index) => ({
+            id: `image_${index}`,
+            prompt: `Frame ${index + 1} from video`,
+            caption: `Step ${index + 1}`,
+            imageData: frame.dataUrl.split(',')[1], // Remove data:image/jpeg;base64, prefix
+            status: 'complete' as const
+        }));
+
+        // Create metadata
+        const metadata = `Video to Blog | ${new Date().toLocaleDateString()} | Tutorial`;
+
+        return {
+            title,
+            subtitle,
+            metadata,
+            content: state.markdownContent || '',
+            visuals
+        };
+    };
+
+    // Publish handlers
+    const handlePublish = () => {
+        if (state.markdownContent && onPublish) {
+            const post = createBlogPostResult();
+            onPublish(post);
+            setIsPublished(true);
+        }
+    };
+
+    const handleSaveDraft = async () => {
+        if (!state.markdownContent || !onSaveDraft) return;
+
+        setIsSavingDraft(true);
+        try {
+            const post = createBlogPostResult();
+            await onSaveDraft(post);
+            setDraftSaved(true);
+            setTimeout(() => setDraftSaved(false), 3000);
+        } catch (error) {
+            console.error('Failed to save draft:', error);
+        } finally {
+            setIsSavingDraft(false);
+        }
+    };
+
+    const handleSchedulePost = async () => {
+        if (!state.markdownContent || !onSchedule || !scheduleDate || !scheduleTime) return;
+
+        setIsScheduling(true);
+        try {
+            const post = createBlogPostResult();
+            const scheduledDate = new Date(`${scheduleDate}T${scheduleTime}`);
+            await onSchedule(post, scheduledDate);
+            setShowScheduleModal(false);
+            setScheduleDate('');
+            setScheduleTime('');
+        } catch (error) {
+            console.error('Failed to schedule post:', error);
+        } finally {
+            setIsScheduling(false);
         }
     };
 
@@ -268,7 +404,7 @@ const VideoToBlog: React.FC = () => {
                                     Drop your video here
                                 </h3>
                                 <p className="text-slate-400 mb-6">
-                                    or click to browse • MP4, WebM, MOV
+                                    or click to browse - MP4, WebM, MOV
                                 </p>
                                 <button className="px-6 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 text-white font-medium hover:shadow-lg hover:shadow-rose-500/25 transition-all">
                                     <Upload className="w-4 h-4 inline-block mr-2" />
@@ -342,24 +478,47 @@ const VideoToBlog: React.FC = () => {
                                 <Eye className="w-5 h-5 text-rose-400" />
                                 Extracted Frames ({state.frames.length})
                             </h3>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setShowFramesModal(true)}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm transition-all"
+                                >
+                                    <ImageIcon className="w-4 h-4" />
+                                    View All
+                                </button>
+                                <button
+                                    onClick={downloadAllScreenshots}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-sm transition-all"
+                                >
+                                    <Package className="w-4 h-4" />
+                                    Download All
+                                </button>
+                            </div>
                         </div>
                         <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
                             {state.frames.slice(0, 8).map((frame, i) => (
                                 <div
                                     key={i}
-                                    className="aspect-video rounded-lg overflow-hidden border border-white/10"
+                                    className="aspect-video rounded-lg overflow-hidden border border-white/10 cursor-pointer hover:border-rose-500/50 transition-all group relative"
+                                    onClick={() => downloadSingleScreenshot(frame, i)}
                                 >
                                     <img
                                         src={frame.dataUrl}
                                         alt={`Frame ${i + 1}`}
                                         className="w-full h-full object-cover"
                                     />
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <Download className="w-4 h-4 text-white" />
+                                    </div>
                                 </div>
                             ))}
                             {state.frames.length > 8 && (
-                                <div className="aspect-video rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+                                <button
+                                    onClick={() => setShowFramesModal(true)}
+                                    className="aspect-video rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all"
+                                >
                                     <span className="text-sm text-slate-400">+{state.frames.length - 8}</span>
-                                </div>
+                                </button>
                             )}
                         </div>
                     </div>
@@ -537,7 +696,8 @@ const VideoToBlog: React.FC = () => {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* Copy */}
                         <button
                             onClick={handleCopy}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
@@ -558,12 +718,76 @@ const VideoToBlog: React.FC = () => {
                                 </>
                             )}
                         </button>
+
+                        {/* Download Screenshots */}
                         <button
+                            onClick={downloadAllScreenshots}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-all"
                         >
-                            <Download className="w-4 h-4" />
-                            Download
+                            <Package className="w-4 h-4" />
+                            Download Screenshots
                         </button>
+
+                        {/* View Frames */}
+                        <button
+                            onClick={() => setShowFramesModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-all"
+                        >
+                            <ImageIcon className="w-4 h-4" />
+                            View Frames
+                        </button>
+
+                        {/* Spacer */}
+                        <div className="flex-1" />
+
+                        {/* Save Draft Button */}
+                        {onSaveDraft && (
+                            <button
+                                onClick={handleSaveDraft}
+                                disabled={isSavingDraft}
+                                className={`px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-medium transition-all ${
+                                    draftSaved
+                                        ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300'
+                                        : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+                                }`}
+                            >
+                                {isSavingDraft ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : draftSaved ? (
+                                    <Check className="w-4 h-4" />
+                                ) : (
+                                    <Save className="w-4 h-4" />
+                                )}
+                                {draftSaved ? "Saved!" : "Save Draft"}
+                            </button>
+                        )}
+
+                        {/* Schedule Button */}
+                        {onSchedule && (
+                            <button
+                                onClick={() => setShowScheduleModal(true)}
+                                className="px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 rounded-xl text-violet-300 flex items-center gap-2 text-sm font-medium transition-all border border-violet-500/30"
+                            >
+                                <Calendar className="w-4 h-4" />
+                                Schedule
+                            </button>
+                        )}
+
+                        {/* Publish Button */}
+                        {onPublish && (
+                            <button
+                                onClick={handlePublish}
+                                disabled={isPublished}
+                                className={`px-4 py-2 rounded-xl text-white flex items-center gap-2 text-sm font-bold transition-all ${
+                                    isPublished
+                                        ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300'
+                                        : 'bg-rose-500 hover:bg-rose-600'
+                                }`}
+                            >
+                                {isPublished ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                                {isPublished ? "Published!" : "Publish Now"}
+                            </button>
+                        )}
                     </div>
 
                     {/* Blog Content */}
@@ -626,8 +850,138 @@ const VideoToBlog: React.FC = () => {
                         <div className="px-8 py-6 border-t border-white/5 bg-white/5">
                             <div className="flex items-center justify-center gap-2 text-slate-500 text-sm">
                                 <div className="w-2 h-2 rounded-full bg-rose-500"></div>
-                                Generated with Video to Blog AI • {config.tone} Tone • {config.length} Length
+                                Generated with Video to Blog AI - {config.tone} Tone - {config.length} Length
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Frames Modal */}
+            {showFramesModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setShowFramesModal(false)}
+                    />
+                    <div className="relative w-full max-w-4xl max-h-[80vh] p-6 rounded-2xl bg-slate-900 border border-white/10 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden flex flex-col">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <ImageIcon className="w-5 h-5 text-rose-400" />
+                                All Screenshots ({state.frames.length})
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={downloadAllScreenshots}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-sm transition-all"
+                                >
+                                    <Package className="w-4 h-4" />
+                                    Download All
+                                </button>
+                                <button
+                                    onClick={() => setShowFramesModal(false)}
+                                    className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {state.frames.map((frame, i) => (
+                                    <div
+                                        key={i}
+                                        className="group relative aspect-video rounded-xl overflow-hidden border border-white/10 cursor-pointer hover:border-rose-500/50 transition-all"
+                                        onClick={() => downloadSingleScreenshot(frame, i)}
+                                    >
+                                        <img
+                                            src={frame.dataUrl}
+                                            alt={`Frame ${i + 1}`}
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity">
+                                            <Download className="w-6 h-6 text-white mb-2" />
+                                            <span className="text-white text-sm font-medium">Frame {i + 1}</span>
+                                        </div>
+                                        <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 rounded text-xs text-white">
+                                            {i + 1}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Schedule Modal */}
+            {showScheduleModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setShowScheduleModal(false)}
+                    />
+                    <div className="relative w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-white/10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-violet-400" />
+                            Schedule Post
+                        </h3>
+
+                        <p className="text-slate-400 text-sm mb-6">
+                            Choose when you want this post to be automatically published.
+                        </p>
+
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-sm text-slate-400 mb-2">Date</label>
+                                <input
+                                    type="date"
+                                    value={scheduleDate}
+                                    onChange={(e) => setScheduleDate(e.target.value)}
+                                    min={new Date().toISOString().split('T')[0]}
+                                    className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-white focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-400 mb-2">Time</label>
+                                <input
+                                    type="time"
+                                    value={scheduleTime}
+                                    onChange={(e) => setScheduleTime(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-xl text-white focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
+                                />
+                            </div>
+                        </div>
+
+                        {scheduleDate && scheduleTime && (
+                            <div className="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20 mb-6">
+                                <p className="text-sm text-violet-300 flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4" />
+                                    Will publish on {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString()}
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowScheduleModal(false)}
+                                className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-white font-medium transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSchedulePost}
+                                disabled={!scheduleDate || !scheduleTime || isScheduling}
+                                className="flex-1 py-3 bg-violet-500 hover:bg-violet-600 rounded-xl text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {isScheduling ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Check className="w-4 h-4" />
+                                )}
+                                Schedule
+                            </button>
                         </div>
                     </div>
                 </div>
