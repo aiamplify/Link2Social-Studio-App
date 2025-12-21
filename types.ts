@@ -16,6 +16,7 @@ export enum ViewMode {
   VIDEO_BROLL = 'VIDEO_BROLL',
   VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER',
   VIRAL_POST_ANALYZER = 'VIRAL_POST_ANALYZER',
+  VIDEO_TO_BLOG = 'VIDEO_TO_BLOG',
   DRAFTS = 'DRAFTS',
   SCHEDULED = 'SCHEDULED',
   CONTENT_BUNDLE_DRAFTS = 'CONTENT_BUNDLE_DRAFTS',
@@ -347,6 +348,42 @@ export interface SavedViralFormula {
     platform: string;
     createdAt: string;
     tags: string[];
+}
+
+// ==================== VIDEO TO BLOG TYPES ====================
+
+export interface VideoFrame {
+  index: number;
+  dataUrl: string;
+  timestamp: number;
+}
+
+export type VideoBlogLength = 'short' | 'medium' | 'long';
+export type VideoBlogTone = 'professional' | 'casual' | 'enthusiastic' | 'instructional';
+
+export interface VideoBlogConfiguration {
+  length: VideoBlogLength;
+  tone: VideoBlogTone;
+  targetAudience: string;
+  includeConclusion: boolean;
+}
+
+export type VideoBlogStatus =
+  | 'idle'
+  | 'processing_video'
+  | 'configuring'
+  | 'generating_text'
+  | 'complete'
+  | 'error';
+
+export interface VideoBlogState {
+  status: VideoBlogStatus;
+  progress: number;
+  error?: string;
+  markdownContent?: string;
+  frames: VideoFrame[];
+  videoName?: string;
+  config?: VideoBlogConfiguration;
 }
 
 declare global {
