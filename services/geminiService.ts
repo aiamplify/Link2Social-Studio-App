@@ -4,7 +4,13 @@
 */
 
 import { GoogleGenAI, Type, Modality, GenerateContentResponse } from "@google/genai";
-import { RepoFileTree, Citation, SocialPost, CarouselResult, CarouselSlide, BlogPostResult, BlogVisual } from '../types';
+import { RepoFileTree, Citation, SocialPost, CarouselResult, CarouselSlide, BlogPostResult, BlogVisual, VerifiedCitation, FactCheckResult } from '../types';
+import {
+    performDeepResearch,
+    verifyBlogFacts,
+    createVerifiedCitations,
+    isOpenRouterAvailable
+} from './openrouterService';
 // SocialPost is now used in generateCarousel for multi-platform captions
 
 // Helper to ensure we always get the freshest key from the environment
@@ -825,7 +831,9 @@ export async function generateBlogFromArticle(
     imageCount: number,
     visualStyle: string,
     language: string,
-    onProgress: (stage: string) => void
+    onProgress: (stage: string) => void,
+    researchModelId?: string,
+    enableFactCheck: boolean = true
 ): Promise<BlogPostResult> {
     const ai = getAiClient();
 
@@ -838,20 +846,61 @@ export async function generateBlogFromArticle(
         : length === 'Long' ? '2000'
         : '3000';
 
-    // For URL sources, fetch content using Jina AI Reader API
+    // Track research data for fact-checking
+    let researchContent = "";
+    let researchCitations: Citation[] = [];
+    let usedResearchModel: string | undefined;
+
+    // For URL sources or topic research, try OpenRouter deep research first
     let fetchedUrlContent = "";
-    if (source.type === 'url') {
-        onProgress("FETCHING ARTICLE CONTENT...");
-        try {
-            fetchedUrlContent = await fetchBlogContentWithJina(source.content);
-            // Truncate if too long to fit in context (keep first 15000 chars)
-            if (fetchedUrlContent.length > 15000) {
-                fetchedUrlContent = fetchedUrlContent.substring(0, 15000) + "\n\n[Content truncated...]";
+    const useOpenRouter = researchModelId && researchModelId !== 'jina-fallback' && isOpenRouterAvailable();
+
+    if (source.type === 'url' || source.type === 'topic') {
+        // Try OpenRouter deep research first if configured
+        if (useOpenRouter) {
+            onProgress("PERFORMING DEEP RESEARCH...");
+            try {
+                const researchTopic = source.type === 'url'
+                    ? `Research and analyze the content from this URL: ${source.content}. Extract all key facts, data, statistics, and claims.`
+                    : source.content;
+
+                const researchResult = await performDeepResearch(
+                    researchTopic,
+                    researchModelId!,
+                    instructions
+                );
+
+                fetchedUrlContent = researchResult.content;
+                researchContent = researchResult.content;
+                researchCitations = researchResult.citations;
+                usedResearchModel = researchResult.modelUsed;
+
+                // Truncate if too long to fit in context
+                if (fetchedUrlContent.length > 15000) {
+                    fetchedUrlContent = fetchedUrlContent.substring(0, 15000) + "\n\n[Content truncated...]";
+                }
+                console.log(`OpenRouter deep research completed with ${researchCitations.length} citations`);
+            } catch (error: any) {
+                console.error("OpenRouter research failed, falling back to JINA:", error);
+                fetchedUrlContent = "";
             }
-        } catch (error: any) {
-            console.error("Jina fetch failed, will use Google Search fallback:", error);
-            // Set to empty to trigger fallback behavior
-            fetchedUrlContent = "";
+        }
+
+        // Fallback to JINA if OpenRouter failed or wasn't configured
+        if (!fetchedUrlContent && source.type === 'url') {
+            onProgress("FETCHING ARTICLE CONTENT...");
+            try {
+                fetchedUrlContent = await fetchBlogContentWithJina(source.content);
+                researchContent = fetchedUrlContent; // Store for fact-checking
+                // Truncate if too long to fit in context (keep first 15000 chars)
+                if (fetchedUrlContent.length > 15000) {
+                    fetchedUrlContent = fetchedUrlContent.substring(0, 15000) + "\n\n[Content truncated...]";
+                }
+            } catch (error: any) {
+                console.error("Jina fetch failed, will use Google Search fallback:", error);
+                // Set to empty to trigger fallback behavior
+                fetchedUrlContent = "";
+            }
         }
         onProgress("WRITING BLOG POST...");
     }
@@ -861,18 +910,34 @@ export async function generateBlogFromArticle(
 
     if (source.type === 'url') {
         if (fetchedUrlContent) {
-            // Use the fetched content from Jina AI
+            // Use the fetched content from OpenRouter or Jina AI
             contextPrompt = `1. Analyze the following article content (fetched from ${source.content}):\n\n---BEGIN ARTICLE---\n${fetchedUrlContent}\n---END ARTICLE---`;
+
+            // Add citation guidance if we have citations
+            if (researchCitations.length > 0) {
+                contextPrompt += `\n\nVERIFIED SOURCES (use these for accuracy):\n${researchCitations.map(c => `- ${c.title}: ${c.uri}`).join('\n')}`;
+            }
         } else {
-            // Fallback to Google Search if Jina fetch failed
+            // Fallback to Google Search if both OpenRouter and Jina fetch failed
             contextPrompt = `1. Access and analyze the content of this article: ${source.content} using Google Search.`;
             useGoogleSearch = true;
         }
     } else if (source.type === 'text') {
+        researchContent = source.content; // Store for fact-checking
         contextPrompt = `1. Analyze the following provided research/text document as the primary source material:\n"${source.content.substring(0, 8000)}..."`;
     } else {
-        contextPrompt = `1. Research the topic "${source.content}" using Google Search to ensure up-to-date and accurate information.`;
-        useGoogleSearch = true;
+        // Topic type
+        if (fetchedUrlContent) {
+            // We have deep research content for the topic
+            contextPrompt = `1. Use the following comprehensive research on "${source.content}" as your primary source:\n\n---BEGIN RESEARCH---\n${fetchedUrlContent}\n---END RESEARCH---`;
+
+            if (researchCitations.length > 0) {
+                contextPrompt += `\n\nVERIFIED SOURCES (use these for accuracy):\n${researchCitations.map(c => `- ${c.title}: ${c.uri}`).join('\n')}`;
+            }
+        } else {
+            contextPrompt = `1. Research the topic "${source.content}" using Google Search to ensure up-to-date and accurate information.`;
+            useGoogleSearch = true;
+        }
     }
 
     const writingPrompt = `
@@ -1078,12 +1143,50 @@ export async function generateBlogFromArticle(
         visuals = await Promise.all(imagePromises);
     }
 
+    // Step 3: Fact-checking (if enabled and we have research content)
+    let factCheckResult: FactCheckResult | undefined;
+    let verifiedCitations: VerifiedCitation[] | undefined;
+
+    if (enableFactCheck && researchContent && content) {
+        onProgress("VERIFYING FACTS...");
+        try {
+            // Use the same model for fact-checking, or fall back to a reliable one
+            const factCheckModelId = usedResearchModel || researchModelId || 'perplexity/sonar-deep-research';
+
+            factCheckResult = await verifyBlogFacts(
+                content,
+                researchContent,
+                researchCitations,
+                factCheckModelId
+            );
+
+            // Create verified citations based on fact-check results
+            if (researchCitations.length > 0) {
+                verifiedCitations = createVerifiedCitations(researchCitations, factCheckResult);
+            }
+
+            console.log(`Fact-check completed: ${factCheckResult.overallConfidence * 100}% confidence, ${factCheckResult.flaggedClaims.length} claims flagged`);
+        } catch (error: any) {
+            console.error("Fact-checking failed:", error);
+            // Continue without fact-check results
+            factCheckResult = {
+                overallConfidence: 0.5,
+                verifiedClaims: [],
+                flaggedClaims: [],
+                warnings: [`Fact-checking encountered an error: ${error.message}`]
+            };
+        }
+    }
+
     return {
         title: title,
         subtitle: subtitle,
         metadata: metadata,
         content: content,
-        visuals: visuals
+        visuals: visuals,
+        citations: verifiedCitations,
+        factCheckResult: factCheckResult,
+        researchModel: usedResearchModel
     };
 }
 

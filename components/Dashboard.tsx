@@ -11,6 +11,7 @@ import YouTubeThumbnail from './YouTubeThumbnail';
 import BrollCreator from './BrollCreator';
 import ScriptVisualizer from './ScriptVisualizer';
 import ViralPostAnalyzer from './ViralPostAnalyzer';
+import VideoToBlog from './VideoToBlog';
 import DraftManager from './DraftManager';
 import ScheduledPosts from './ScheduledPosts';
 import ContentBundleDrafts from './ContentBundleDrafts';
@@ -28,7 +29,7 @@ import {
     Activity, Target, Eye, MousePointer, Heart, MessageSquare, Repeat, BookOpen, Lightbulb, Rocket,
     Crown, Diamond, Award, Flame, Timer, CheckCircle2, AlertCircle, Info, HelpCircle, Keyboard,
     Moon, Sun, Monitor, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Grid3X3, List, LayoutGrid, Archive,
-    CalendarCheck, Brain, Globe
+    CalendarCheck, Brain, Globe, Film
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -155,10 +156,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout, onViewBl
         { id: 'bundle', label: 'Content Bundle', description: 'Infographic + Social Posts', icon: FileText, color: 'emerald', action: ViewMode.ARTICLE_INFOGRAPHIC, shortcut: '⌘1' },
         { id: 'carousel', label: 'Carousel Creator', description: 'LinkedIn & IG Slides', icon: Layout, color: 'sky', action: ViewMode.CAROUSEL_GENERATOR, shortcut: '⌘2' },
         { id: 'blog', label: 'Blog Remix', description: 'AI-Powered Writing', icon: PenTool, color: 'orange', action: ViewMode.BLOG_TO_BLOG, shortcut: '⌘3' },
-        { id: 'thumbnail', label: 'Viral Thumbnails', description: 'High CTR Designs', icon: Youtube, color: 'red', action: ViewMode.YOUTUBE_THUMBNAIL, shortcut: '⌘4' },
-        { id: 'broll', label: 'B-Roll Creator', description: 'Cinematic Video', icon: Video, color: 'indigo', action: ViewMode.VIDEO_BROLL, shortcut: '⌘5' },
-        { id: 'script', label: 'Script Visualizer', description: 'Storyboard Scenes', icon: Clapperboard, color: 'teal', action: ViewMode.VIDEO_SCRIPT_VISUALIZER, shortcut: '⌘6' },
-        { id: 'viral', label: 'Viral Analyzer', description: 'Reverse-Engineer Posts', icon: Brain, color: 'pink', action: ViewMode.VIRAL_POST_ANALYZER, shortcut: '⌘7' },
+        { id: 'videoblog', label: 'Video to Blog', description: 'Turn Videos into Articles', icon: Film, color: 'rose', action: ViewMode.VIDEO_TO_BLOG, shortcut: '⌘4' },
+        { id: 'thumbnail', label: 'Viral Thumbnails', description: 'High CTR Designs', icon: Youtube, color: 'red', action: ViewMode.YOUTUBE_THUMBNAIL, shortcut: '⌘5' },
+        { id: 'broll', label: 'B-Roll Creator', description: 'Cinematic Video', icon: Video, color: 'indigo', action: ViewMode.VIDEO_BROLL, shortcut: '⌘6' },
+        { id: 'script', label: 'Script Visualizer', description: 'Storyboard Scenes', icon: Clapperboard, color: 'teal', action: ViewMode.VIDEO_SCRIPT_VISUALIZER, shortcut: '⌘7' },
+        { id: 'viral', label: 'Viral Analyzer', description: 'Reverse-Engineer Posts', icon: Brain, color: 'pink', action: ViewMode.VIRAL_POST_ANALYZER, shortcut: '⌘8' },
     ];
 
     // Keyboard shortcuts
@@ -173,7 +175,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout, onViewBl
             // Quick navigation shortcuts
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
                 const num = parseInt(e.key);
-                if (num >= 1 && num <= 7) {
+                if (num >= 1 && num <= 8) {
                     e.preventDefault();
                     const action = quickActions[num - 1];
                     if (action) setCurrentView(action.action);
@@ -603,6 +605,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout, onViewBl
                                          currentView === ViewMode.CONTENT_BUNDLE_DRAFTS ? 'Saved Bundles' :
                                          currentView === ViewMode.CONTENT_CALENDAR ? 'Content Calendar' :
                                          currentView === ViewMode.VIRAL_POST_ANALYZER ? 'Viral Analyzer' :
+                                         currentView === ViewMode.VIDEO_TO_BLOG ? 'Video to Blog' :
                                          'Home')}
                                     </span>
                                 </>
@@ -848,6 +851,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout, onViewBl
                         {currentView === ViewMode.VIRAL_POST_ANALYZER && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <ViralPostAnalyzer />
+                            </div>
+                        )}
+                        {currentView === ViewMode.VIDEO_TO_BLOG && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <VideoToBlog
+                                    onPublish={handlePublishPost}
+                                    onSaveDraft={handleSaveDraft}
+                                    onSchedule={handleSchedulePost}
+                                />
                             </div>
                         )}
                         {currentView === ViewMode.DRAFTS && (

@@ -16,7 +16,8 @@ import {
     optimizeAllSEO,
     styleBlankBlogPost
 } from '../services/geminiService';
-import { BlogPostResult, BlogVisual } from '../types';
+import { BlogPostResult, BlogVisual, FactCheckResult, OpenRouterModel } from '../types';
+import { DEEP_RESEARCH_MODELS, isOpenRouterAvailable } from '../services/openrouterService';
 import { 
     RefreshCw, Loader2, AlertCircle, FileText, Download, Copy, Check, Image as ImageIcon, Sparkles, 
     Globe, Palette, Maximize, Edit3, Code, Eye, Upload, Wand2, X, Send, Search, Type,
@@ -126,6 +127,11 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
     const [selectedLength, setSelectedLength] = useState<'Short' | 'Medium' | 'Long' | 'Extensive'>('Medium');
     const [imageCount, setImageCount] = useState(3);
     const [selectedTone, setSelectedTone] = useState(TONE_OPTIONS[0]);
+
+    // Deep Research & Fact-Checking
+    const [selectedResearchModel, setSelectedResearchModel] = useState<OpenRouterModel>(DEEP_RESEARCH_MODELS[0]);
+    const [enableFactCheck, setEnableFactCheck] = useState(true);
+    const [showFactCheckPanel, setShowFactCheckPanel] = useState(false);
     
     // Font
     const [selectedFont, setSelectedFont] = useState(FONT_OPTIONS[0].value);
@@ -401,10 +407,17 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                     imageCount,
                     styleToUse,
                     selectedLanguage,
-                    (stage) => setLoadingStage(stage)
+                    (stage) => setLoadingStage(stage),
+                    selectedResearchModel.id,
+                    enableFactCheck
                 );
                 setResult(data);
                 setEditContent(data.content);
+
+                // Show fact-check panel if we have results
+                if (data.factCheckResult) {
+                    setShowFactCheckPanel(true);
+                }
 
                 // Auto-generate meta description if empty
                 if (!metaDescription && data.subtitle) {
@@ -1151,6 +1164,62 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                 className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200"
                             />
                         )}
+
+                        {/* Deep Research & Fact-Checking - only show for URL and Topic modes */}
+                        {(inputMode === 'url' || inputMode === 'topic') && (
+                            <div className="pt-4 border-t border-white/5 space-y-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Search className="w-4 h-4 text-cyan-400" />
+                                    <span className="text-sm font-medium text-white">Deep Research & Fact-Checking</span>
+                                    <span className="px-1.5 py-0.5 bg-cyan-500/20 text-cyan-400 text-[9px] rounded font-bold">NEW</span>
+                                </div>
+
+                                {/* Research Model Dropdown */}
+                                <div className="space-y-2">
+                                    <label className="text-xs text-slate-500">Research Model</label>
+                                    <select
+                                        value={selectedResearchModel.id}
+                                        onChange={(e) => setSelectedResearchModel(DEEP_RESEARCH_MODELS.find(m => m.id === e.target.value) || DEEP_RESEARCH_MODELS[0])}
+                                        className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-300 focus:ring-2 focus:ring-cyan-500/50"
+                                    >
+                                        {DEEP_RESEARCH_MODELS.map(model => (
+                                            <option key={model.id} value={model.id}>
+                                                {model.name} {model.badge ? `(${model.badge})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-slate-500">{selectedResearchModel.description}</p>
+                                </div>
+
+                                {/* Fact-Check Toggle */}
+                                <div className="flex items-center justify-between p-3 bg-slate-950/50 border border-white/10 rounded-xl">
+                                    <div className="flex items-center gap-3">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                        <div>
+                                            <span className="text-sm text-white">Enable Fact-Checking</span>
+                                            <p className="text-xs text-slate-500">Verify claims against research sources</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEnableFactCheck(!enableFactCheck)}
+                                        className={`relative w-11 h-6 rounded-full transition-colors ${enableFactCheck ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                                    >
+                                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${enableFactCheck ? 'translate-x-5' : ''}`} />
+                                    </button>
+                                </div>
+
+                                {!isOpenRouterAvailable() && selectedResearchModel.id !== 'jina-fallback' && (
+                                    <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                        <p className="text-xs text-amber-300">
+                                            OPENROUTER_API_KEY not configured. Add it in Vercel to use deep research models.
+                                            Currently using JINA AI fallback.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* SEO Settings */}
@@ -1390,6 +1459,114 @@ const BlogToBlog: React.FC<BlogToBlogProps> = ({ onPublish, onSaveDraft, onSched
                                     )}
                                 </div>
                             </div>
+
+                            {/* Fact-Check Results Panel */}
+                            {result.factCheckResult && showFactCheckPanel && (
+                                <div className="mb-6 p-6 rounded-2xl bg-slate-900/50 border border-white/5 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                                result.factCheckResult.overallConfidence >= 0.8 ? 'bg-emerald-500/20' :
+                                                result.factCheckResult.overallConfidence >= 0.6 ? 'bg-amber-500/20' : 'bg-red-500/20'
+                                            }`}>
+                                                {result.factCheckResult.overallConfidence >= 0.8 ? (
+                                                    <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                                                ) : result.factCheckResult.overallConfidence >= 0.6 ? (
+                                                    <AlertCircle className="w-6 h-6 text-amber-400" />
+                                                ) : (
+                                                    <XCircle className="w-6 h-6 text-red-400" />
+                                                )}
+                                            </div>
+                                            <div>
+                                                <h4 className="text-white font-bold flex items-center gap-2">
+                                                    Fact-Check Results
+                                                    {result.researchModel && (
+                                                        <span className="text-xs text-slate-500 font-normal">
+                                                            via {DEEP_RESEARCH_MODELS.find(m => m.id === result.researchModel)?.name || result.researchModel}
+                                                        </span>
+                                                    )}
+                                                </h4>
+                                                <p className="text-sm text-slate-400">
+                                                    {Math.round(result.factCheckResult.overallConfidence * 100)}% confidence •
+                                                    {result.factCheckResult.verifiedClaims.length} verified •
+                                                    {result.factCheckResult.flaggedClaims.length} flagged
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowFactCheckPanel(false)}
+                                            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                                        >
+                                            <X className="w-4 h-4 text-slate-400" />
+                                        </button>
+                                    </div>
+
+                                    {/* Warnings */}
+                                    {result.factCheckResult.warnings.length > 0 && (
+                                        <div className="space-y-2">
+                                            {result.factCheckResult.warnings.map((warning, idx) => (
+                                                <div key={idx} className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                                                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                                    <p className="text-xs text-amber-300">{warning}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Flagged Claims */}
+                                    {result.factCheckResult.flaggedClaims.length > 0 && (
+                                        <div className="space-y-2">
+                                            <h5 className="text-sm font-medium text-red-400 flex items-center gap-2">
+                                                <XCircle className="w-4 h-4" />
+                                                Flagged Claims
+                                            </h5>
+                                            {result.factCheckResult.flaggedClaims.map((claim, idx) => (
+                                                <div key={idx} className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl space-y-2">
+                                                    <p className="text-sm text-red-200">"{claim.claim}"</p>
+                                                    {claim.correction && (
+                                                        <p className="text-xs text-emerald-400">
+                                                            <strong>Suggested:</strong> {claim.correction}
+                                                        </p>
+                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] px-2 py-0.5 bg-red-500/20 text-red-300 rounded">
+                                                            {Math.round(claim.confidence * 100)}% confidence
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Citations */}
+                                    {result.citations && result.citations.length > 0 && (
+                                        <div className="space-y-2">
+                                            <h5 className="text-sm font-medium text-cyan-400 flex items-center gap-2">
+                                                <ExternalLink className="w-4 h-4" />
+                                                Research Sources ({result.citations.length})
+                                            </h5>
+                                            <div className="flex flex-wrap gap-2">
+                                                {result.citations.map((citation, idx) => (
+                                                    <a
+                                                        key={idx}
+                                                        href={citation.uri}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                                                            citation.verified
+                                                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20'
+                                                                : 'bg-slate-500/10 border-slate-500/20 text-slate-300 hover:bg-slate-500/20'
+                                                        }`}
+                                                    >
+                                                        {citation.verified && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
+                                                        {citation.title}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Visual Preview */}
                             {viewMode === 'visual' && (

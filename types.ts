@@ -16,6 +16,7 @@ export enum ViewMode {
   VIDEO_BROLL = 'VIDEO_BROLL',
   VIDEO_SCRIPT_VISUALIZER = 'VIDEO_SCRIPT_VISUALIZER',
   VIRAL_POST_ANALYZER = 'VIRAL_POST_ANALYZER',
+  VIDEO_TO_BLOG = 'VIDEO_TO_BLOG',
   DRAFTS = 'DRAFTS',
   SCHEDULED = 'SCHEDULED',
   CONTENT_BUNDLE_DRAFTS = 'CONTENT_BUNDLE_DRAFTS',
@@ -57,6 +58,44 @@ export interface DevStudioState {
 export interface Citation {
     uri: string;
     title: string;
+}
+
+// Extended citation with verification status
+export interface VerifiedCitation extends Citation {
+    verified: boolean;
+    verificationScore: number;
+}
+
+// Fact-check claim result
+export interface FactCheckClaim {
+    claim: string;
+    verified: boolean;
+    confidence: number;
+    sources: string[];
+    correction?: string;
+}
+
+// Fact-check result for blog posts
+export interface FactCheckResult {
+    overallConfidence: number;
+    verifiedClaims: FactCheckClaim[];
+    flaggedClaims: FactCheckClaim[];
+    warnings: string[];
+}
+
+// OpenRouter research model configuration
+export interface OpenRouterModel {
+    id: string;
+    name: string;
+    description: string;
+    badge?: 'Recommended' | 'Free' | 'Premium' | 'Open Source' | 'Fallback';
+}
+
+// Research result from OpenRouter
+export interface OpenRouterResearchResult {
+    content: string;
+    citations: Citation[];
+    modelUsed: string;
 }
 
 export interface RepoHistoryItem {
@@ -110,6 +149,10 @@ export interface BlogPostResult {
     metadata: string; // "Author | Date | Category"
     content: string; // Markdown content containing placeholders like [[IMAGE_1]]
     visuals: BlogVisual[];
+    // Optional: Deep research and fact-checking metadata
+    citations?: VerifiedCitation[];
+    factCheckResult?: FactCheckResult;
+    researchModel?: string;
 }
 
 export interface PublishedPost extends BlogPostResult {
@@ -347,6 +390,42 @@ export interface SavedViralFormula {
     platform: string;
     createdAt: string;
     tags: string[];
+}
+
+// ==================== VIDEO TO BLOG TYPES ====================
+
+export interface VideoFrame {
+  index: number;
+  dataUrl: string;
+  timestamp: number;
+}
+
+export type VideoBlogLength = 'short' | 'medium' | 'long';
+export type VideoBlogTone = 'professional' | 'casual' | 'enthusiastic' | 'instructional';
+
+export interface VideoBlogConfiguration {
+  length: VideoBlogLength;
+  tone: VideoBlogTone;
+  targetAudience: string;
+  includeConclusion: boolean;
+}
+
+export type VideoBlogStatus =
+  | 'idle'
+  | 'processing_video'
+  | 'configuring'
+  | 'generating_text'
+  | 'complete'
+  | 'error';
+
+export interface VideoBlogState {
+  status: VideoBlogStatus;
+  progress: number;
+  error?: string;
+  markdownContent?: string;
+  frames: VideoFrame[];
+  videoName?: string;
+  config?: VideoBlogConfiguration;
 }
 
 declare global {
