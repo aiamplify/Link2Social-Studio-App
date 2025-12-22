@@ -60,6 +60,44 @@ export interface Citation {
     title: string;
 }
 
+// Extended citation with verification status
+export interface VerifiedCitation extends Citation {
+    verified: boolean;
+    verificationScore: number;
+}
+
+// Fact-check claim result
+export interface FactCheckClaim {
+    claim: string;
+    verified: boolean;
+    confidence: number;
+    sources: string[];
+    correction?: string;
+}
+
+// Fact-check result for blog posts
+export interface FactCheckResult {
+    overallConfidence: number;
+    verifiedClaims: FactCheckClaim[];
+    flaggedClaims: FactCheckClaim[];
+    warnings: string[];
+}
+
+// OpenRouter research model configuration
+export interface OpenRouterModel {
+    id: string;
+    name: string;
+    description: string;
+    badge?: 'Recommended' | 'Free' | 'Premium' | 'Open Source' | 'Fallback';
+}
+
+// Research result from OpenRouter
+export interface OpenRouterResearchResult {
+    content: string;
+    citations: Citation[];
+    modelUsed: string;
+}
+
 export interface RepoHistoryItem {
   id: string;
   repoName: string;
@@ -111,6 +149,10 @@ export interface BlogPostResult {
     metadata: string; // "Author | Date | Category"
     content: string; // Markdown content containing placeholders like [[IMAGE_1]]
     visuals: BlogVisual[];
+    // Optional: Deep research and fact-checking metadata
+    citations?: VerifiedCitation[];
+    factCheckResult?: FactCheckResult;
+    researchModel?: string;
 }
 
 export interface PublishedPost extends BlogPostResult {
