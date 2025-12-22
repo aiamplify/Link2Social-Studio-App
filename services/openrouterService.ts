@@ -67,22 +67,23 @@ export const DEEP_RESEARCH_MODELS: OpenRouterModel[] = [
 // =============================================================================
 
 /**
- * Get OpenRouter API key from environment - SAFE version
+ * Get OpenRouter API key from environment
+ *
+ * IMPORTANT: Vite's `define` replaces `process.env.OPENROUTER_API_KEY` at build time
+ * with the actual string value. We must access it directly - any conditional check
+ * like `typeof process !== 'undefined'` would short-circuit before the replacement.
  */
 function getOpenRouterApiKey(): string | null {
     try {
-        // Safely access process.env
-        const key = typeof process !== 'undefined' && process.env ? process.env.OPENROUTER_API_KEY : null;
-
-        // Debug logging - remove after fixing
-        console.log('[OpenRouter Debug] API Key exists:', !!key, 'Length:', key?.length || 0);
+        // Vite replaces this entire expression at build time with the actual value
+        // Do NOT add conditional checks around this - it will break the replacement
+        const key = process.env.OPENROUTER_API_KEY;
 
         if (!key || key === '' || key === 'undefined') {
             return null;
         }
         return key;
     } catch (e) {
-        console.error('[OpenRouter Debug] Error accessing env:', e);
         // If anything fails, return null
         return null;
     }

@@ -11,9 +11,6 @@ export default defineConfig(({ mode }) => {
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || env.OPENROUTER_API_KEY || '';
     const JINA_API_KEY = process.env.JINA_API_KEY || env.JINA_API_KEY || '';
 
-    // Debug during build
-    console.log('[Vite Build] OPENROUTER_API_KEY length:', OPENROUTER_API_KEY.length);
-
     return {
       server: {
         port: 3000,
