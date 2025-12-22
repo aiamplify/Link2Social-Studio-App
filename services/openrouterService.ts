@@ -73,11 +73,16 @@ function getOpenRouterApiKey(): string | null {
     try {
         // Safely access process.env
         const key = typeof process !== 'undefined' && process.env ? process.env.OPENROUTER_API_KEY : null;
+
+        // Debug logging - remove after fixing
+        console.log('[OpenRouter Debug] API Key exists:', !!key, 'Length:', key?.length || 0);
+
         if (!key || key === '' || key === 'undefined') {
             return null;
         }
         return key;
-    } catch {
+    } catch (e) {
+        console.error('[OpenRouter Debug] Error accessing env:', e);
         // If anything fails, return null
         return null;
     }

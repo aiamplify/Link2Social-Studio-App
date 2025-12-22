@@ -6,10 +6,13 @@ export default defineConfig(({ mode }) => {
     // Load from .env files
     const env = loadEnv(mode, '.', '');
 
-    // Merge with system env vars (for Vercel deployment)
-    const GEMINI_API_KEY = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
-    const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || '';
-    const JINA_API_KEY = env.JINA_API_KEY || process.env.JINA_API_KEY || '';
+    // Prioritize system env vars (Vercel) over .env files (local)
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || '';
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || env.OPENROUTER_API_KEY || '';
+    const JINA_API_KEY = process.env.JINA_API_KEY || env.JINA_API_KEY || '';
+
+    // Debug during build
+    console.log('[Vite Build] OPENROUTER_API_KEY length:', OPENROUTER_API_KEY.length);
 
     return {
       server: {
