@@ -856,7 +856,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onPublishPost, onLogout, onViewBl
                         {currentView === ViewMode.VIDEO_TO_BLOG && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <VideoToBlog
-                                    onPublish={handlePublishPost}
+                                    onPublish={onPublishPost}
                                     onSaveDraft={handleSaveDraft}
                                     onSchedule={handleSchedulePost}
                                 />
