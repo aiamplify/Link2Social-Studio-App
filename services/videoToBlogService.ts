@@ -141,7 +141,7 @@ Your goal is to transform a visual sequence of steps from a video tutorial into 
 
 **Input:**
 You will receive a sequence of images (frames) extracted from a video tutorial.
-NOTE: You may receive many images. Some may be redundant or transitional.
+You MUST use ALL ${frames.length} images in your blog post - every single screenshot is important for helping readers understand the process visually.
 
 **Configuration Parameters:**
 1.  **Length:** ${lengthInstruction}
@@ -153,17 +153,19 @@ NOTE: You may receive many images. Some may be redundant or transitional.
 1.  **Title:** Create a catchy, SEO-friendly title for the tutorial.
 2.  **Introduction:** Write a brief introduction explaining what the tutorial covers and why it is useful.
 3.  **Step-by-Step Instructions:** Break down the process into clear, numbered steps.
-4.  **Visual Illustration (CRITICAL):**
-    - Select the best images that clearly illustrate specific steps.
-    - Aggressively filter the images. Do NOT use blurry, transitional, or repetitive images.
-    - When you describe a step that corresponds to a good image, insert a placeholder tag: \`[[IMAGE_index]]\`.
-    - \`index\` corresponds to the order of the image provided (0 to ${frames.length - 1}).
+4.  **Visual Illustration (CRITICAL - USE ALL IMAGES):**
+    - You MUST include EVERY image provided (from index 0 to ${frames.length - 1}).
+    - Each image shows a step in the process - include all of them so readers can see exactly what's happening at every stage.
+    - For each image, insert a placeholder tag: \`[[IMAGE_index]]\` where \`index\` is 0 to ${frames.length - 1}.
+    - Distribute the images throughout the blog post to match the corresponding steps.
+    - Write descriptive context around each image explaining what the reader is seeing.
     - IMPORTANT: Do NOT wrap the placeholder in Markdown image syntax. Just write \`[[IMAGE_index]]\` on its own line.
 5.  **Formatting:** Use standard Markdown. H2 (##) for main sections, H3 (###) for sub-sections. Bold UI elements.
 
 **Constraint:**
-- Only use images provided.
+- Use ALL ${frames.length} images provided - do not skip any.
 - Do not invent steps that are not visually implied.
+- Make sure every image from [[IMAGE_0]] to [[IMAGE_${frames.length - 1}]] appears exactly once in your output.
 `;
 
   const imageParts = frames.map((frame) => {

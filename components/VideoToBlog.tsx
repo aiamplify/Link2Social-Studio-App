@@ -320,16 +320,44 @@ const VideoToBlog: React.FC<VideoToBlogProps> = ({ onPublish, onSaveDraft, onSch
         }
     };
 
-    // Process content to replace image placeholders
+    // Process content to replace image placeholders and ensure ALL images are included
     const processContent = (text: string) => {
-        return text.replace(/\[\[IMAGE_(\d+)\]\]/g, (match, index) => {
+        // Track which images have been used
+        const usedImages = new Set<number>();
+
+        // First, replace all existing placeholders
+        let processedText = text.replace(/\[\[IMAGE_(\d+)\]\]/g, (match, index) => {
             const frameIndex = parseInt(index, 10);
             const frame = state.frames[frameIndex];
             if (frame) {
+                usedImages.add(frameIndex);
                 return `\n\n![Step ${frameIndex + 1}](${frame.dataUrl})\n\n`;
             }
             return '';
         });
+
+        // Find any images that weren't used and append them at the end
+        const missingImages: number[] = [];
+        for (let i = 0; i < state.frames.length; i++) {
+            if (!usedImages.has(i)) {
+                missingImages.push(i);
+            }
+        }
+
+        // If there are missing images, add them in an additional section
+        if (missingImages.length > 0) {
+            processedText += '\n\n## Additional Screenshots\n\n';
+            processedText += 'Here are additional screenshots showing more details of the process:\n\n';
+
+            for (const frameIndex of missingImages) {
+                const frame = state.frames[frameIndex];
+                if (frame) {
+                    processedText += `![Step ${frameIndex + 1}](${frame.dataUrl})\n\n`;
+                }
+            }
+        }
+
+        return processedText;
     };
 
     // URL transform to allow data URLs (base64 images)
