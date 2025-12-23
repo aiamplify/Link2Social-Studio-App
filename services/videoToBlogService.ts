@@ -153,16 +153,19 @@ NOTE: You may receive many images. Some may be redundant or transitional.
 1.  **Title:** Create a catchy, SEO-friendly title for the tutorial.
 2.  **Introduction:** Write a brief introduction explaining what the tutorial covers and why it is useful.
 3.  **Step-by-Step Instructions:** Break down the process into clear, numbered steps.
-4.  **Visual Illustration (CRITICAL):**
-    - Select the best images that clearly illustrate specific steps.
-    - Aggressively filter the images. Do NOT use blurry, transitional, or repetitive images.
-    - When you describe a step that corresponds to a good image, insert a placeholder tag: \`[[IMAGE_index]]\`.
-    - \`index\` corresponds to the order of the image provided (0 to ${frames.length - 1}).
+4.  **Visual Illustration (CRITICAL - MUST USE ALL IMAGES):**
+    - You MUST include EVERY SINGLE image provided in the blog post. No exceptions.
+    - Each image should be placed at the most relevant point in the content to illustrate that specific moment or step.
+    - For each image, insert a placeholder tag: \`[[IMAGE_index]]\` where \`index\` is the image number (0 to ${frames.length - 1}).
+    - Write descriptive context around each image so readers understand exactly what they are seeing.
+    - Even if images appear similar, include them all - they show progression and subtle changes that help readers follow along.
     - IMPORTANT: Do NOT wrap the placeholder in Markdown image syntax. Just write \`[[IMAGE_index]]\` on its own line.
+    - IMPORTANT: You MUST use all ${frames.length} images: [[IMAGE_0]] through [[IMAGE_${frames.length - 1}]].
 5.  **Formatting:** Use standard Markdown. H2 (##) for main sections, H3 (###) for sub-sections. Bold UI elements.
 
 **Constraint:**
-- Only use images provided.
+- You MUST use ALL ${frames.length} images provided. Every single one must appear in the final blog post.
+- Do not skip any images. The reader needs to see every visual step to fully understand the process.
 - Do not invent steps that are not visually implied.
 `;
 
@@ -177,7 +180,7 @@ NOTE: You may receive many images. Some may be redundant or transitional.
   });
 
   const promptText = {
-    text: `Here are ${frames.length} sequential screenshots from a video tutorial. Please write the blog post following the system instructions.`
+    text: `Here are ${frames.length} sequential screenshots from a video tutorial. Please write the blog post following the system instructions. IMPORTANT: You MUST include ALL ${frames.length} screenshots in the blog post using placeholders [[IMAGE_0]] through [[IMAGE_${frames.length - 1}]]. Every single screenshot must be used to give the reader complete visual context of the entire process.`
   };
 
   return withRetry(async () => {
